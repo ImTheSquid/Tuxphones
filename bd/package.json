@@ -1,0 +1,14 @@
+{
+  "name": "tuxphones",
+  "version": "0.1.0",
+  "description": "Discord soundshare for Linux",
+  "main": "index.jsx",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jack Hogan",
+  "license": "MIT",
+  "dependencies": {
+    "bdbuilder": "^1.2.6-preview.4"
+  }
+}

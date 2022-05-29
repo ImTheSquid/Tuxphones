@@ -1,0 +1,21 @@
+{
+    "info": {
+        "name": "Tuxphones",
+        "authors": [{
+            "name": "ImTheSquid",
+            "discord_id": "262055523896131584",
+            "github_username": "ImTheSquid",
+            "twitter_username": "ImTheSquid11"
+        }],
+        "version": "1.0.0",
+        "description": "Tuxphones",
+        "github": "https://github.com/ImTheSquid/Tuxphones",
+        "github_raw": "https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js"
+    },
+    "build": {
+        "copy": true,
+        "zlibrary": true,
+        "production": false,
+        "alias": {}
+    }
+}
