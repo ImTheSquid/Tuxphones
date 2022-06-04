@@ -54,8 +54,8 @@ function buildPlugin([BasePlugin, PluginApi]) {
 	const module = {
 		exports: {}
 	};
-	/*! For license information please see index.js.LICENSE.txt */
 	(() => {
+		"use strict";
 		class StyleLoader {
 			static styles = "";
 			static element = null;
@@ -255,22 +255,81 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}
 			}
 		};
-		var __webpack_modules__ = {
-			"./plugins/Tuxphones/index.jsx": module => {
-				eval("module.exports = (Plugin, Library) => {\n    return class extends Plugin {\n        onStart() {\n\n        }\n\n        onStop() {\n            \n        }\n    }\n}\n\n//# sourceURL=webpack://LibraryPluginHack/./plugins/Tuxphones/index.jsx?");
-			}
-		};
-		var __webpack_module_cache__ = {};
-		function __webpack_require__(moduleId) {
-			var cachedModule = __webpack_module_cache__[moduleId];
-			if (void 0 !== cachedModule) return cachedModule.exports;
-			var module = __webpack_module_cache__[moduleId] = {
-				exports: {}
+		var __webpack_require__ = {};
+		(() => {
+			__webpack_require__.d = (exports, definition) => {
+				for (var key in definition)
+					if (__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) Object.defineProperty(exports, key, {
+						enumerable: true,
+						get: definition[key]
+					});
 			};
-			__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
-			return module.exports;
-		}
-		var __webpack_exports__ = __webpack_require__("./plugins/Tuxphones/index.jsx");
+		})();
+		(() => {
+			__webpack_require__.o = (obj, prop) => Object.prototype.hasOwnProperty.call(obj, prop);
+		})();
+		(() => {
+			__webpack_require__.r = exports => {
+				if ("undefined" !== typeof Symbol && Symbol.toStringTag) Object.defineProperty(exports, Symbol.toStringTag, {
+					value: "Module"
+				});
+				Object.defineProperty(exports, "__esModule", {
+					value: true
+				});
+			};
+		})();
+		var __webpack_exports__ = {};
+		__webpack_require__.r(__webpack_exports__);
+		__webpack_require__.d(__webpack_exports__, {
+			default: () => Tuxphones
+		});
+		const external_fs_namespaceObject = require("fs");
+		const external_net_namespaceObject = require("net");
+		const external_path_namespaceObject = require("path");
+		const {
+			Logger
+		} = PluginApi;
+		const Tuxphones = class extends BasePlugin {
+			onStart() {
+				if (!process.env.HOME) {
+					BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
+						type: "error"
+					});
+					return;
+				}
+				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				this.endStream();
+			}
+			startStream(ip, port, key, pid) {
+				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixServer.write(JSON.stringify({
+						type: "StartStream",
+						ip,
+						port,
+						key,
+						pid
+					}));
+					this.unixServer.destroy();
+				}));
+			}
+			endStream() {
+				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixServer.write(JSON.stringify({
+						type: "StopStream"
+					}));
+					this.unixServer.destroy();
+				}));
+			}
+			getInfo() {
+				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixServer.write(JSON.stringify({
+						type: "GetInfo"
+					}));
+					this.unixServer.destroy();
+				}));
+			}
+			onStop() {}
+		};
 		module.exports.LibraryPluginHack = __webpack_exports__;
 	})();
 	const PluginExports = module.exports.LibraryPluginHack;
