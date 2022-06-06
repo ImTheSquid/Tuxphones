@@ -17,9 +17,17 @@ pub mod receive {
 
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
+    pub struct StreamResolutionInformation {
+        pub width: u32,
+        pub height: u32,
+        pub is_fixed: bool
+    }
+
+    #[derive(Deserialize, Debug)]
+    #[serde(tag = "type")]
     pub enum SocketListenerCommand {
         /// IP Address, port, encryption key, and PID to capture from
-        StartStream { ip: String, port: u16, key: Vec<u8>, pid: usize },
+        StartStream { ip: String, port: u16, key: Vec<u8>, pid: usize, resolution: StreamResolutionInformation, ssrc: usize },
         StopStream,
         GetInfo
     }

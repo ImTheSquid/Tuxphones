@@ -15,6 +15,7 @@ export default class extends BasePlugin {
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
         this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
 
+        
         this.unixServer = createServer(sock => {
             Logger.log(sock);
         });
@@ -22,14 +23,20 @@ export default class extends BasePlugin {
         this.endStream();
     }
 
-    startStream(ip, port, key, pid) {
+    startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
         this.unixServer = createConnection(this.sockPath, () => {
             this.unixServer.write(JSON.stringify({
                 type: 'StartStream',
                 ip: ip,
                 port: port,
                 key: key,
-                pid: pid
+                pid: pid,
+                resolution: {
+                    width: width,
+                    height: height,
+                    is_fixed: is_fixed
+                },
+                ssrc: ssrc
             }));
             this.unixServer.destroy();
         });
