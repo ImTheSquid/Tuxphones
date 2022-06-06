@@ -1,5 +1,5 @@
 pub mod receive {
-    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::{UnixListener, UnixStream}, io::{Read, self, Write}, fs};
+    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
     pub struct SocketListener {
         thread: Option<thread::JoinHandle<()>>
@@ -99,5 +99,91 @@ pub mod receive {
                 thread.join().expect("Unable to join thread");
             }
         }
+    }
+}
+
+pub mod send {
+    use std::{os::unix::net::UnixStream, env, path::Path, io::Write};
+
+    use serde::Serialize;
+
+    #[derive(Serialize)]
+    #[serde(tag = "type")]
+    struct ApplicationList<'a> {
+        apps: &'a Vec<Application>
+    }
+
+    #[derive(Serialize)]
+    #[serde(tag = "type")]
+    pub struct Application {
+        name: String,
+        pid: usize
+    }
+
+    #[derive(Serialize)]
+    #[serde(tag = "type")]
+    struct ConnectionId {
+        id: usize
+    }
+
+    pub enum SocketError {
+        ConnectionFailed,
+        NoRuntimeDir,
+        NoSocket,
+        SerializationFailed,
+        WriteFailed
+    }
+
+    fn connect_to_socket() -> Result<UnixStream, SocketError> {
+        // Attempt to load env var
+        let key = match env::var("HOME") {
+            Ok(val) => val,
+            Err(_) => return Err(SocketError::NoRuntimeDir)
+        };
+    
+        let path = Path::new(&key).join(".config").join("tuxphonesjs.sock");
+
+        if !path.exists() {
+            return Err(SocketError::NoSocket);
+        }
+
+        match UnixStream::connect(&path) {
+            Ok(s) => Ok(s),
+            Err(e) => {
+                eprintln!("Socket connection error: {}", e);
+                Err(SocketError::ConnectionFailed)
+            },
+        }
+    }
+
+    fn write_socket<T>(data: &T) -> Result<(), SocketError>
+        where T: ?Sized + Serialize
+    {
+        let mut socket = connect_to_socket()?;
+        match serde_json::to_string(data) {
+            Ok(s) => match socket.write(s.as_bytes()) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    eprintln!("Write failed: {}", e);
+                    return Err(SocketError::WriteFailed);
+                },
+            },
+            Err(e) => {
+                eprintln!("Serialization failed: {}", e);
+                return Err(SocketError::SerializationFailed);
+            },
+        }
+    }
+
+    pub fn application_info(apps: &Vec<Application>) -> Result<(), SocketError> {
+        write_socket(&ApplicationList { apps })?;
+
+        Ok(())
+    }
+
+    pub fn connection_id(id: usize) -> Result<(), SocketError> {
+        write_socket(&ConnectionId { id })?;
+
+        Ok(())
     }
 }

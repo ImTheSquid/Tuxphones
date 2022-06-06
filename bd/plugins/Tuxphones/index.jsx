@@ -1,4 +1,4 @@
-import { existsSync } from 'fs';
+import { createServer } from 'net';
 import { createConnection } from 'net';
 import { join } from 'path';
 
@@ -13,6 +13,11 @@ export default class extends BasePlugin {
         }
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
+        this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
+
+        this.unixServer = createServer(sock => {
+            Logger.log(sock);
+        });
 
         this.endStream();
     }
@@ -49,5 +54,8 @@ export default class extends BasePlugin {
     }
 
     onStop() {
+        if (this.unixServer && this.unixServer.listening) {
+            this.unixServer.close();
+        }
     }
 }

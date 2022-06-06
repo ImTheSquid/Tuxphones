@@ -283,7 +283,6 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		__webpack_require__.d(__webpack_exports__, {
 			default: () => Tuxphones
 		});
-		const external_fs_namespaceObject = require("fs");
 		const external_net_namespaceObject = require("net");
 		const external_path_namespaceObject = require("path");
 		const {
@@ -298,6 +297,10 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					return;
 				}
 				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
+				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
+					Logger.log(sock);
+				}));
 				this.endStream();
 			}
 			startStream(ip, port, key, pid) {
@@ -328,7 +331,9 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					this.unixServer.destroy();
 				}));
 			}
-			onStop() {}
+			onStop() {
+				if (this.unixServer && this.unixServer.listening) this.unixServer.close();
+			}
 		};
 		module.exports.LibraryPluginHack = __webpack_exports__;
 	})();
