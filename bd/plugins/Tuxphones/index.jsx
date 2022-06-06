@@ -14,18 +14,39 @@ export default class extends BasePlugin {
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
         this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
-
         
         this.unixServer = createServer(sock => {
-            Logger.log(sock);
+            let data = [];
+            sock.on('data', d => data += d);
+            sock.on('end', () =>{
+                this.parseData(data);
+                data = [];
+            })
         });
+
+        this.unixServer.listen(this.serverSockPath, () => Logger.log('Server bound'));
 
         this.endStream();
     }
 
+    parseData(data) {
+        let obj = JSON.parse(data);
+        Logger.log(obj)
+        switch (obj.type) {
+            case 'ApplicationList':
+                const {apps} = obj;
+                break;
+            case 'ConnectionId':
+                const {id} = obj;
+                break;
+            default:
+                Logger.err(`Received unknown command type: ${obj.type}`);
+        }
+    }
+
     startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
-        this.unixServer = createConnection(this.sockPath, () => {
-            this.unixServer.write(JSON.stringify({
+        this.unixClient = createConnection(this.sockPath, () => {
+            this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
                 ip: ip,
                 port: port,
@@ -38,25 +59,25 @@ export default class extends BasePlugin {
                 },
                 ssrc: ssrc
             }));
-            this.unixServer.destroy();
+            this.unixClient.destroy();
         });
     }
 
     endStream() {
-        this.unixServer = createConnection(this.sockPath, () => {
-            this.unixServer.write(JSON.stringify({
+        this.unixClient = createConnection(this.sockPath, () => {
+            this.unixClient.write(JSON.stringify({
                 type: 'StopStream'
             }));
-            this.unixServer.destroy();
+            this.unixClient.destroy();
         });
     }
 
     getInfo() {
-        this.unixServer = createConnection(this.sockPath, () => {
-            this.unixServer.write(JSON.stringify({
+        this.unixClient = createConnection(this.sockPath, () => {
+            this.unixClient.write(JSON.stringify({
                 type: 'GetInfo'
             }));
-            this.unixServer.destroy();
+            this.unixClient.destroy();
         });
     }
 

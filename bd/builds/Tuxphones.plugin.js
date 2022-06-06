@@ -1,7 +1,7 @@
 /**
  * @name Tuxphones
  * @author ImTheSquid
- * @version 1.0.0
+ * @version 0.1.0
  * @description Tuxphones
  * @source https://github.com/ImTheSquid/Tuxphones
  * @updateUrl https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js
@@ -38,7 +38,7 @@ const config = {
 			"github_username": "ImTheSquid",
 			"twitter_username": "ImTheSquid11"
 		}],
-		"version": "1.0.0",
+		"version": "0.1.0",
 		"description": "Tuxphones",
 		"github": "https://github.com/ImTheSquid/Tuxphones",
 		"github_raw": "https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js"
@@ -299,36 +299,66 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
 				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
 				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
-					Logger.log(sock);
+					let data = [];
+					sock.on("data", (d => data += d));
+					sock.on("end", (() => {
+						this.parseData(data);
+						data = [];
+					}));
 				}));
+				this.unixServer.listen(this.serverSockPath, (() => Logger.log("Server bound")));
 				this.endStream();
 			}
-			startStream(ip, port, key, pid) {
-				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-					this.unixServer.write(JSON.stringify({
+			parseData(data) {
+				let obj = JSON.parse(data);
+				Logger.log(obj);
+				switch (obj.type) {
+					case "ApplicationList":
+						const {
+							apps
+						} = obj;
+						break;
+					case "ConnectionId":
+						const {
+							id
+						} = obj;
+						break;
+					default:
+						Logger.err(`Received unknown command type: ${obj.type}`);
+				}
+			}
+			startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
 						type: "StartStream",
 						ip,
 						port,
 						key,
-						pid
+						pid,
+						resolution: {
+							width,
+							height,
+							is_fixed
+						},
+						ssrc
 					}));
-					this.unixServer.destroy();
+					this.unixClient.destroy();
 				}));
 			}
 			endStream() {
-				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-					this.unixServer.write(JSON.stringify({
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
 						type: "StopStream"
 					}));
-					this.unixServer.destroy();
+					this.unixClient.destroy();
 				}));
 			}
 			getInfo() {
-				this.unixServer = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-					this.unixServer.write(JSON.stringify({
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
 						type: "GetInfo"
 					}));
-					this.unixServer.destroy();
+					this.unixClient.destroy();
 				}));
 			}
 			onStop() {
