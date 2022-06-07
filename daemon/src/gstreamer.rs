@@ -69,9 +69,6 @@ impl Drop for GstHandle {
     }
 }
 
-
-//gst-launch-1.0 ximagesrc xname=Octopi ! video/x-raw,framerate=30/1 ! videoscale method=0 ! video/x-raw,width=640,height=480  ! ximagesink
-
 impl GstHandle {
     pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64) -> Result<Self, GstInitializationError> {
         gst::init()?;
