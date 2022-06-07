@@ -72,7 +72,7 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
-    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64, discordAddress: &str) -> Result<Self, GstInitializationError> {
+    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64, discord_address: &str) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
 
@@ -140,7 +140,7 @@ impl GstHandle {
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
 
         let mut sdp = SDPMessage::new();
-        sdp.set_connection("IN", "IP4", discordAddress, 1, 1);
+        sdp.set_connection("IN", "IP4", discord_address, 1, 1);
 
         let webrtc_desc = WebRTCSessionDescription::new(
             WebRTCSDPType::Offer,
