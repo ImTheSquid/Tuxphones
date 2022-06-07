@@ -1,7 +1,7 @@
 /**
  * @name Tuxphones
  * @author ImTheSquid
- * @version 1.0.0
+ * @version 0.1.0
  * @description Tuxphones
  * @source https://github.com/ImTheSquid/Tuxphones
  * @updateUrl https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js
@@ -38,7 +38,7 @@ const config = {
 			"github_username": "ImTheSquid",
 			"twitter_username": "ImTheSquid11"
 		}],
-		"version": "1.0.0",
+		"version": "0.1.0",
 		"description": "Tuxphones",
 		"github": "https://github.com/ImTheSquid/Tuxphones",
 		"github_raw": "https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js"
@@ -54,8 +54,8 @@ function buildPlugin([BasePlugin, PluginApi]) {
 	const module = {
 		exports: {}
 	};
-	/*! For license information please see index.js.LICENSE.txt */
 	(() => {
+		"use strict";
 		class StyleLoader {
 			static styles = "";
 			static element = null;
@@ -255,22 +255,116 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}
 			}
 		};
-		var __webpack_modules__ = {
-			"./plugins/Tuxphones/index.jsx": module => {
-				eval("module.exports = (Plugin, Library) => {\n    return class extends Plugin {\n        onStart() {\n\n        }\n\n        onStop() {\n            \n        }\n    }\n}\n\n//# sourceURL=webpack://LibraryPluginHack/./plugins/Tuxphones/index.jsx?");
+		var __webpack_require__ = {};
+		(() => {
+			__webpack_require__.d = (exports, definition) => {
+				for (var key in definition)
+					if (__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) Object.defineProperty(exports, key, {
+						enumerable: true,
+						get: definition[key]
+					});
+			};
+		})();
+		(() => {
+			__webpack_require__.o = (obj, prop) => Object.prototype.hasOwnProperty.call(obj, prop);
+		})();
+		(() => {
+			__webpack_require__.r = exports => {
+				if ("undefined" !== typeof Symbol && Symbol.toStringTag) Object.defineProperty(exports, Symbol.toStringTag, {
+					value: "Module"
+				});
+				Object.defineProperty(exports, "__esModule", {
+					value: true
+				});
+			};
+		})();
+		var __webpack_exports__ = {};
+		__webpack_require__.r(__webpack_exports__);
+		__webpack_require__.d(__webpack_exports__, {
+			default: () => Tuxphones
+		});
+		const external_net_namespaceObject = require("net");
+		const external_path_namespaceObject = require("path");
+		const {
+			Logger
+		} = PluginApi;
+		const Tuxphones = class extends BasePlugin {
+			onStart() {
+				if (!process.env.HOME) {
+					BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
+						type: "error"
+					});
+					return;
+				}
+				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
+				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
+					let data = [];
+					sock.on("data", (d => data += d));
+					sock.on("end", (() => {
+						this.parseData(data);
+						data = [];
+					}));
+				}));
+				this.unixServer.listen(this.serverSockPath, (() => Logger.log("Server bound")));
+				this.endStream();
+			}
+			parseData(data) {
+				let obj = JSON.parse(data);
+				Logger.log(obj);
+				switch (obj.type) {
+					case "ApplicationList":
+						const {
+							apps
+						} = obj;
+						break;
+					case "ConnectionId":
+						const {
+							id
+						} = obj;
+						break;
+					default:
+						Logger.err(`Received unknown command type: ${obj.type}`);
+				}
+			}
+			startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "StartStream",
+						ip,
+						port,
+						key,
+						pid,
+						resolution: {
+							width,
+							height,
+							is_fixed
+						},
+						ssrc
+					}));
+					this.unixClient.destroy();
+				}));
+			}
+			endStream() {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "StopStream"
+					}));
+					this.unixClient.destroy();
+				}));
+			}
+			getInfo() {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "GetInfo"
+					}));
+					this.unixClient.destroy();
+				}));
+			}
+			onStop() {
+				if (this.unixServer && this.unixServer.listening) this.unixServer.close();
 			}
 		};
-		var __webpack_module_cache__ = {};
-		function __webpack_require__(moduleId) {
-			var cachedModule = __webpack_module_cache__[moduleId];
-			if (void 0 !== cachedModule) return cachedModule.exports;
-			var module = __webpack_module_cache__[moduleId] = {
-				exports: {}
-			};
-			__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
-			return module.exports;
-		}
-		var __webpack_exports__ = __webpack_require__("./plugins/Tuxphones/index.jsx");
 		module.exports.LibraryPluginHack = __webpack_exports__;
 	})();
 	const PluginExports = module.exports.LibraryPluginHack;
