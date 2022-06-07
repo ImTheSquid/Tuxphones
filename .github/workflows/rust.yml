@@ -13,11 +13,12 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: daemon
 
     steps:
     - uses: actions/checkout@v3
-    - name: Navigate Repo
-      run: cd daemon
     - name: Build
       run: cargo build --verbose
     - name: Run tests
