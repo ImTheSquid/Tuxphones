@@ -19,6 +19,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Dependencies
+      run: sudo apt-get install -y libpulse-dev
     - name: Build
       run: cargo build --verbose
     - name: Run tests
