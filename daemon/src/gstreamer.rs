@@ -92,6 +92,7 @@ impl GstHandle {
         //Create a new videoconvert to allow encoding of the raw video
         let videoconvert = gst::ElementFactory::make("videoconvert", None)?;
 
+        //Chose encoder and rtp encapsulator based on constructor params
         let (encoder, encoder_pay) = match encoder_to_use {
             VideoEncoderType::H264(settings) => {
                 (
@@ -126,6 +127,13 @@ impl GstHandle {
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
         pulsesrc.set_property_from_str("device", audio_source);
 
+        //Create a new audioconvert to allow encoding of the raw audio
+        let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
+        //Encoder for the raw audio to opus
+        let opusenc = gst::ElementFactory::make("opusenc", None)?;
+        //Opus encapsulator for rtp
+        let rtpopuspay = gst::ElementFactory::make("rtpopuspay", None)?;
+
 
         //--DESTINATION--
 
@@ -139,7 +147,7 @@ impl GstHandle {
         let queue = gst::ElementFactory::make("queue", None)?;
 
 
-        pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &pulsesrc, &queue, &webrtcbin])?;
+        pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
         Element::link_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
 
         Ok(GstHandle {
