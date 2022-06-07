@@ -4,7 +4,8 @@ use tuxphones::pulse::PulseHandle;
 use tuxphones::gstreamer::{GstHandle, H264Settings, VideoEncoderType};
 
 fn main() {
-    test_gst();
+    // test_gst();
+    // test_pulse();
 }
 
 fn test_gst() {
