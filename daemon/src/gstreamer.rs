@@ -2,6 +2,8 @@ use std::sync::Mutex;
 
 use gst::{Element, glib, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
+use gst_sdp::SDPMessage;
+use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 
 //Gstreamer handles count to prevent deinitialization of gstreamer
@@ -70,7 +72,7 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
-    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64) -> Result<Self, GstInitializationError> {
+    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64, discordAddress: &str) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
 
@@ -136,8 +138,19 @@ impl GstHandle {
 
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
-        //TODO: webrtc props
 
+        let mut sdp = SDPMessage::new();
+        sdp.set_connection("IN", "IP4", discordAddress, 1, 1);
+
+        let webrtc_desc = WebRTCSessionDescription::new(
+            WebRTCSDPType::Offer,
+            sdp
+        );
+
+        let promise = gst::Promise::with_change_func(|_reply| {
+        });
+
+        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &promise]);
 
         //--COMMON--
 
