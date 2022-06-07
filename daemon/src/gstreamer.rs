@@ -118,7 +118,7 @@ impl GstHandle {
             }
         };
 
-        encoder_pay.set_property("ssrc", video_ssrc)
+        encoder_pay.set_property("ssrc", video_ssrc);
 
 
         //--AUDIO--
