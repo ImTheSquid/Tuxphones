@@ -1,9 +1,16 @@
 use std::{thread, time::Duration};
 
 use tuxphones::pulse::PulseHandle;
+use tuxphones::gstreamer::{GstHandle, H264Settings, VideoEncoderType};
 
 fn main() {
-    // test_pulse();
+    test_gst();
+}
+
+fn test_gst() {
+    println!("Hello, world!");
+    let mut pipeline = GstHandle::new(VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), "", 0).unwrap();
+
 }
 
 fn test_pulse() {

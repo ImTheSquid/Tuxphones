@@ -11,3 +11,7 @@ repository = "https://github.com/ImTheSquid/Tuxphones"
 
 [dependencies]
 libpulse-binding = "2.26.0"
+gst = { git="https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package = "gstreamer" }
+gst-webrtc = { git="https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package = "gstreamer-webrtc" }
+gst-sdp = { git="https://gitlab.freedesktop.org/gstreamer/gstreamer-rs", package = "gstreamer-sdp" }
+once_cell = "1.12.0"
