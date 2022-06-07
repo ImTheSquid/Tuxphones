@@ -72,7 +72,7 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
-    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, xid: u64, discord_address: &str) -> Result<Self, GstInitializationError> {
+    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, audio_ssrc: u32, xid: u64, video_ssrc: u32, discord_address: &str) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
 
@@ -118,6 +118,8 @@ impl GstHandle {
             }
         };
 
+        encoder_pay.set_property("ssrc", video_ssrc)
+
 
         //--AUDIO--
 
@@ -132,6 +134,7 @@ impl GstHandle {
         let opusenc = gst::ElementFactory::make("opusenc", None)?;
         //Opus encapsulator for rtp
         let rtpopuspay = gst::ElementFactory::make("rtpopuspay", None)?;
+        rtpopuspay.set_property("ssrc", audio_ssrc);
 
 
         //--DESTINATION--

@@ -10,7 +10,7 @@ fn main() {
 
 fn test_gst() {
     println!("Hello, world!");
-    let mut pipeline = GstHandle::new(VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), "", 0, "127.0.0.1:25555").unwrap();
+    let mut pipeline = GstHandle::new(VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), "", 1,0, 1,"127.0.0.1:25555").unwrap();
 
 }
 
