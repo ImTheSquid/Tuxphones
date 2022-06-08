@@ -323,6 +323,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					}
 					this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
 					this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
+					if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
 					this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
 						let data = [];
 						sock.on("data", (d => data += d));
@@ -436,9 +437,10 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					Logger.log(obj);
 					switch (obj.type) {
 						case "ApplicationList":
-							const {
-								apps
-							} = obj;
+							Dispatcher.dirtyDispatch({
+								type: "TUX_APPS",
+								apps: obj.apps
+							});
 							break;
 						case "ConnectionId":
 							const {
@@ -472,10 +474,6 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					}));
 				}
 				getInfo() {
-					Dispatcher.dirtyDispatch({
-						type: "TUX_APPS",
-						apps: []
-					});
 					this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 						this.unixClient.write(JSON.stringify({
 							type: "GetInfo"

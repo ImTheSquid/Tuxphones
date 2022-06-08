@@ -17,6 +17,10 @@ export default class extends BasePlugin {
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
         this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
+
+        if (existsSync(this.serverSockPath)) {
+            unlinkSync(this.serverSockPath);
+        }
         
         this.unixServer = createServer(sock => {
             let data = [];
@@ -159,7 +163,10 @@ export default class extends BasePlugin {
         Logger.log(obj)
         switch (obj.type) {
             case 'ApplicationList':
-                const {apps} = obj;
+                Dispatcher.dirtyDispatch({
+                    type: 'TUX_APPS',
+                    apps: obj.apps
+                });
                 break;
             case 'ConnectionId':
                 const {id} = obj;
@@ -194,11 +201,6 @@ export default class extends BasePlugin {
     }
 
     getInfo() {
-        // Test code
-        Dispatcher.dirtyDispatch({
-            type: 'TUX_APPS',
-            apps: []
-        })
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'GetInfo'

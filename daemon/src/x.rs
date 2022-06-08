@@ -1,8 +1,13 @@
-use xcb::res::{QueryClientIds, ClientIdSpec, ClientIdMask};
+use std::{collections::HashMap, time::{SystemTime, Duration}};
+
+use sysinfo::{SystemExt, ProcessExt, PidExt};
+use xcb::res::{QueryClientIds, QueryClients, ClientIdSpec, ClientIdMask};
 use crate::{pid, xid};
 
 pub struct XServerHandle {
-    connection: xcb::Connection
+    connection: xcb::Connection,
+    cache: HashMap<pid, xid>,
+    last_cache_wipe: Option<SystemTime>
 }
 
 impl XServerHandle {
@@ -10,28 +15,95 @@ impl XServerHandle {
         // Connect to the server
         let (conn, _) = xcb::Connection::connect(None)?;
 
-        Ok(XServerHandle { connection: conn })
+        Ok(XServerHandle { connection: conn, cache: HashMap::new(), last_cache_wipe: None })
     }
 
-    pub fn xid_from_pid(self: &Self, pid: pid) -> Result<Option<xid>, xcb::Error> {
+    /// Attempts to derive a PID from an XID
+    fn pid_from_xid(self: &Self, xid: xid) -> Result<Option<pid>, xcb::Error> {
         // Create request
         let cookie = self.connection.send_request(&QueryClientIds {
             specs: &[ClientIdSpec {
-                client: pid,
+                client: xid,
                 mask: ClientIdMask::LOCAL_CLIENT_PID
             }]
         });
 
         let reply = self.connection.wait_for_reply(cookie)?;
 
+        // Get the current Xorg process to make sure XServer isn't falsely recognizing windows
+        let mut system = sysinfo::System::new();
+        system.refresh_processes();
+        let xorg_procs = system.processes_by_name("Xorg").into_iter().map(|p| p.pid().as_u32());
+
         if let Some(val) = reply.ids().next() {
-            return Ok(if val.value().len() > 0 {
+            return Ok(if val.value().len() > 0 && !xorg_procs.into_iter().any(|v| v == val.value()[0]) {
                 Some(val.value()[0])
             } else {
                 None
-            })
+            });
         }
 
         Ok(None)
+    }
+
+    /// Checks the cache for a value and refeshes cache if needed
+    fn check_cache(self: &mut Self, pid: pid) -> Option<xid> {
+        if let Some(wipe) = self.last_cache_wipe {
+            // If it's been more than 5 minutes since last cache wipe, wipe again
+            if SystemTime::now().duration_since(wipe).unwrap_or(Duration::from_secs(10000000)) > Duration::from_secs(5 * 60) {
+                self.last_cache_wipe = Some(SystemTime::now());
+                self.cache.clear();
+            }
+        }
+
+        if let Some(xid) = self.cache.get(&pid) {
+            return Some(*xid);
+        }
+
+        None
+    }
+
+    /// Finds XID from a PID or process name (case sensitive)
+    pub fn xid_from_pid_or_name(self: &mut Self, pid: pid, name: &str) -> Result<Option<xid>, xcb::Error> {
+        // Check cache first
+        if let Some(xid) = self.check_cache(pid) {
+            return Ok(Some(xid));
+        }
+
+        // Create request
+        let cookie = self.connection.send_request(&QueryClients {});
+
+        let reply = self.connection.wait_for_reply(cookie)?;
+        let xids: Vec<xid> = reply.clients().into_iter().map(|c| c.resource_base).collect();
+
+        if let Some(value) = self.find_pid_in_xids(&xids, pid) {
+            return value;
+        }
+
+        // If still haven't found XID, look through processes with a command that match the given name (since Pulse PIDs can be arbitrary) and see if each PID has an associated XID
+        let mut system = sysinfo::System::new();
+        system.refresh_processes();
+        for (pid, process) in system.processes().into_iter().filter(|(_, p)| p.cmd().len() > 0) {
+            let split: Vec<&str> = process.cmd()[0].split(' ').collect();
+            if split[0].ends_with(name) {
+                if let Some(value) = self.find_pid_in_xids(&xids, pid.as_u32()) {
+                    return value;
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn find_pid_in_xids(self: &mut Self, xids: &Vec<u32>, pid: pid) -> Option<Result<Option<u32>, xcb::Error>> {
+        for xid in xids {
+            if let Some(res) = self.pid_from_xid(*xid).ok() {
+                if res.is_some() && res.unwrap() == pid {
+                    self.cache.insert(pid, *xid);
+                    return Some(Ok(Some(*xid)));
+                }
+            }
+        }
+        None
     }
 }

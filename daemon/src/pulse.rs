@@ -24,6 +24,7 @@ pub struct BasicSinkInfo {
     module: Option<u32>
 }
 
+#[derive(Debug)]
 pub struct AudioApplication {
     pub name: String,
     pub pid: pid,
@@ -180,7 +181,7 @@ impl PulseHandle {
                 ListResult::Item(info) => {
                     if let Some(pid) = info.proplist.get_str("application.process.id") {
                         results_ref.borrow_mut().as_mut().unwrap().push(AudioApplication {
-                            name: format!("{}:{}", info.proplist.get_str("application.name").unwrap_or("NONAME".to_string()), info.proplist.get_str("media.name").unwrap_or("NOMEDIA".to_string())),
+                            name: info.proplist.get_str("application.name").unwrap_or("NONAME".to_string()),
                             pid: pid.parse().unwrap(),
                             index: info.index,
                             sink_index: info.sink,
