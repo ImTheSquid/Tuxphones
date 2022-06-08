@@ -1,7 +1,5 @@
-import { unlinkSync } from 'fs';
-import { existsSync, fstat } from 'fs';
-import { createServer } from 'net';
-import { createConnection } from 'net';
+import { unlinkSync, existsSync } from 'fs';
+import { createServer, createConnection } from 'net';
 import { join } from 'path';
 
 const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = PluginApi;
