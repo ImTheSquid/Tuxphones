@@ -72,7 +72,7 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
-    pub fn new(encoder_to_use: VideoEncoderType, audio_source: &str, audio_ssrc: u32, xid: u64, video_ssrc: u32, discord_address: &str) -> Result<Self, GstInitializationError> {
+    pub fn new(encoder_to_use: VideoEncoderType, audio_ssrc: u32, xid: u64, video_ssrc: u32, discord_address: &str) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
 
@@ -126,7 +126,7 @@ impl GstHandle {
         //Create a new pulsesrc to get audio from the PulseAudio server
         let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
-        pulsesrc.set_property_from_str("device", audio_source);
+        pulsesrc.set_property_from_str("device", "tuxphones");
 
         //Create a new audioconvert to allow encoding of the raw audio
         let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
