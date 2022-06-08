@@ -123,11 +123,7 @@ export default class extends BasePlugin {
             });
         });
 
-        // Patch stream start to interrupt if using sound
-        Patcher.instead(Dispatcher, 'dirtyDispatch', (_, [arg], original) => {
-            // Logger.log(arg)
-            original(arg);
-        });
+        this.getInfo();
     }
 
     resetVars() {

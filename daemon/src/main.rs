@@ -1,6 +1,6 @@
 use std::{thread, time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
 
-use tuxphones::{pulse::PulseHandle, socket::receive::SocketListener};
+use tuxphones::{pulse::PulseHandle, socket::receive::SocketListener, CommandProcessor};
 
 fn main() {
     let run = Arc::new(AtomicBool::new(true));
@@ -28,11 +28,17 @@ fn main() {
         }
     };
 
+    let mut command_processor = CommandProcessor::new(receiver, Arc::clone(&run), Duration::from_secs(2));
+
+    println!("Daemon started");
+
     socket_watcher.join();
+    command_processor.join();
 
     // test_pulse();
 }
 
+#[allow(dead_code)]
 fn test_pulse() {
     println!("Hello, world!");
     let mut handle = PulseHandle::new().expect("Failed!");

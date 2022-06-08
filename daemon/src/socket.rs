@@ -112,6 +112,7 @@ pub mod receive {
 
 pub mod send {
     use std::{os::unix::net::UnixStream, env, path::Path, io::Write};
+    use crate::{pid, xid};
 
     use serde::Serialize;
 
@@ -124,8 +125,9 @@ pub mod send {
     #[derive(Serialize)]
     #[serde(tag = "type")]
     pub struct Application {
-        name: String,
-        pid: usize
+        pub name: String,
+        pub pid: pid,
+        pub xid: xid
     }
 
     #[derive(Serialize)]
@@ -140,6 +142,18 @@ pub mod send {
         NoSocket,
         SerializationFailed,
         WriteFailed
+    }
+
+    impl std::fmt::Display for SocketError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                SocketError::ConnectionFailed => "Connection failed",
+                SocketError::NoRuntimeDir => "No runtime directory",
+                SocketError::NoSocket => "No foreign socket",
+                SocketError::SerializationFailed => "Serialization failed",
+                SocketError::WriteFailed => "Socket write failed",
+            })
+        }
     }
 
     fn connect_to_socket() -> Result<UnixStream, SocketError> {

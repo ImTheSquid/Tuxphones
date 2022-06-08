@@ -408,9 +408,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 							this.getInfo();
 						}))))));
 					}));
-					Patcher.instead(Dispatcher, "dirtyDispatch", ((_, [arg], original) => {
-						original(arg);
-					}));
+					this.getInfo();
 				}
 				resetVars() {
 					this._ws.onmessage = this._onmessage;

@@ -1,6 +1,7 @@
 use std::{rc::Rc, cell::RefCell, ops::Deref};
 
 use libpulse_binding::{mainloop::threaded::Mainloop, context::{Context, State, FlagSet as ContextFlagSet}, callbacks::ListResult, operation::Operation};
+use crate::pid;
 
 pub struct PulseHandle {
     mainloop: Rc<RefCell<Mainloop>>,
@@ -25,7 +26,7 @@ pub struct BasicSinkInfo {
 
 pub struct AudioApplication {
     pub name: String,
-    pub pid: usize,
+    pub pid: pid,
     pub index: u32,
     pub sink_index: u32
 }
@@ -322,7 +323,7 @@ impl PulseHandle {
     }
 
     /// Starts capturing audio from the application with the given Pulse PID
-    pub fn start_capture(self: &mut Self, pid: usize) -> Result<(), PulseCaptureError> {
+    pub fn start_capture(self: &mut Self, pid: pid) -> Result<(), PulseCaptureError> {
         if !self.audio_is_setup || self.combined_sink_module_index.is_none() {
             return Err(PulseCaptureError::NotSetup);
         }
