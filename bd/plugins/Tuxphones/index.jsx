@@ -113,13 +113,6 @@ export default class extends BasePlugin {
             });
         });
 
-        ContextMenu.getDiscordMenu('SourceSelect').then(m => {
-            Patcher.after(m, 'default', (_, [arg], ret) => {
-                //Logger.log(arg)
-                //Logger.log(ret)
-            });
-        })
-
         ContextMenu.getDiscordMenu('Confirm').then(m => {
             Patcher.after(m, 'default', (_, [arg], ret) => {
                 if (!Array.isArray(ret.props.children)) return;

@@ -371,9 +371,6 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						}, "Go Live with Sound"));
 					}));
 				}));
-				ContextMenu.getDiscordMenu("SourceSelect").then((m => {
-					Patcher.after(m, "default", ((_, [arg]) => {}));
-				}));
 				ContextMenu.getDiscordMenu("Confirm").then((m => {
 					Patcher.after(m, "default", ((_, [arg], ret) => {
 						if (!Array.isArray(ret.props.children)) return;
