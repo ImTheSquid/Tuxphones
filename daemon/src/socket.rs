@@ -1,5 +1,5 @@
 pub mod receive {
-    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
+    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
     pub struct SocketListener {
         thread: Option<thread::JoinHandle<()>>
@@ -72,8 +72,6 @@ pub mod receive {
                                     continue;
                                 }
                             }
-
-                            println!("[{:?}] Command received: {}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(), buf);
 
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
                                 Ok(cmd) => match sender.send(cmd) {

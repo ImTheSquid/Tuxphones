@@ -1,4 +1,4 @@
-use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
+use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread};
 
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
@@ -23,13 +23,20 @@ impl CommandProcessor {
             let mut x = XServerHandle::new().unwrap();
 
             loop {
+                if !run.load(Ordering::SeqCst) {
+                    println!("Command processor shut down");
+                    break;
+                }
+
                 match receiver.try_recv() {
                     Ok(cmd) => match cmd {
                         SocketListenerCommand::StartStream { ip: _, port: _, key: _, pid: _, resolution: _, ssrc: _ } => todo!(),
                         SocketListenerCommand::StopStream => todo!(),
                         SocketListenerCommand::GetInfo => {
+                            let time_start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                            println!("[GetInfo:{}] Command received", time_start);
+
                             let apps = pulse.get_audio_applications();
-                            println!("{:#?}", apps);
                             let apps = apps
                                 .into_iter()
                                 .filter_map(|a| {
@@ -49,7 +56,7 @@ impl CommandProcessor {
                                 .map(|(a, xid)| Application { name: a.name, pid: a.pid, xid })
                                 .collect();
                             match socket::send::application_info(&apps) {
-                                Ok(_) => println!("GetInfo command processed (found {} application(s))", apps.len()),
+                                Ok(_) => println!("[GetInfo:{}] Command processed (applications found: {})", time_start, apps.len()),
                                 Err(e) => eprintln!("Failed to send application data: {}", e)
                             }
                         }
@@ -61,10 +68,6 @@ impl CommandProcessor {
                             break;
                         },
                         mpsc::TryRecvError::Empty => {
-                            if !run.load(Ordering::SeqCst) {
-                                println!("Command processor shut down");
-                                break;
-                            }
                             thread::sleep(sleep_time);
                         }
                     }

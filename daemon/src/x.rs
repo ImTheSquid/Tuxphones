@@ -6,7 +6,8 @@ use crate::{pid, xid};
 
 pub struct XServerHandle {
     connection: xcb::Connection,
-    cache: HashMap<pid, xid>,
+    /// Stores a cache of pids to xids
+    cache: HashMap<pid, Option<xid>>,
     last_cache_wipe: Option<SystemTime>
 }
 
@@ -47,7 +48,7 @@ impl XServerHandle {
     }
 
     /// Checks the cache for a value and refeshes cache if needed
-    fn check_cache(self: &mut Self, pid: pid) -> Option<xid> {
+    fn check_cache(self: &mut Self, pid: pid) -> Option<Option<xid>> {
         if let Some(wipe) = self.last_cache_wipe {
             // If it's been more than 5 minutes since last cache wipe, wipe again
             if SystemTime::now().duration_since(wipe).unwrap_or(Duration::from_secs(10000000)) > Duration::from_secs(5 * 60) {
@@ -64,11 +65,16 @@ impl XServerHandle {
     }
 
     /// Finds XID from a PID or process name (case sensitive)
-    pub fn xid_from_pid_or_name(self: &mut Self, pid: pid, name: &str) -> Result<Option<xid>, xcb::Error> {
+    pub fn xid_from_pid_or_name(self: &mut Self, pulse_pid: pid, name: &str) -> Result<Option<xid>, xcb::Error> {
         // Check cache first
-        if let Some(xid) = self.check_cache(pid) {
-            return Ok(Some(xid));
+        if let Some(xid) = self.check_cache(pulse_pid) {
+            return match xid {
+                Some(xid) => Ok(Some(xid)),
+                None => Ok(None)
+            };
         }
+
+        println!("Cache miss for PID {}", pulse_pid);
 
         // Create request
         let cookie = self.connection.send_request(&QueryClients {});
@@ -76,7 +82,7 @@ impl XServerHandle {
         let reply = self.connection.wait_for_reply(cookie)?;
         let xids: Vec<xid> = reply.clients().into_iter().map(|c| c.resource_base).collect();
 
-        if let Some(value) = self.find_pid_in_xids(&xids, pid) {
+        if let Some(value) = self.find_pid_in_xids(&xids, pulse_pid, pulse_pid) {
             return value;
         }
 
@@ -86,7 +92,7 @@ impl XServerHandle {
         for (pid, process) in system.processes().into_iter().filter(|(_, p)| p.cmd().len() > 0) {
             let split: Vec<&str> = process.cmd()[0].split(' ').collect();
             if split[0].ends_with(name) {
-                if let Some(value) = self.find_pid_in_xids(&xids, pid.as_u32()) {
+                if let Some(value) = self.find_pid_in_xids(&xids, pid.as_u32(), pulse_pid) {
                     return value;
                 }
             }
@@ -95,15 +101,18 @@ impl XServerHandle {
         Ok(None)
     }
 
-    fn find_pid_in_xids(self: &mut Self, xids: &Vec<u32>, pid: pid) -> Option<Result<Option<u32>, xcb::Error>> {
+    fn find_pid_in_xids(self: &mut Self, xids: &Vec<u32>, pid: pid, pulse_pid: pid) -> Option<Result<Option<u32>, xcb::Error>> {
         for xid in xids {
             if let Some(res) = self.pid_from_xid(*xid).ok() {
                 if res.is_some() && res.unwrap() == pid {
-                    self.cache.insert(pid, *xid);
+                    println!("Cache store {}:{}", pulse_pid, *xid);
+                    self.cache.insert(pulse_pid, Some(*xid));
                     return Some(Ok(Some(*xid)));
                 }
             }
         }
+
+        self.cache.insert(pulse_pid, None);
         None
     }
 }
