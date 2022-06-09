@@ -1,6 +1,7 @@
 pub mod receive {
     use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
+    use crate::pid;
     pub struct SocketListener {
         thread: Option<thread::JoinHandle<()>>
     }
@@ -27,7 +28,7 @@ pub mod receive {
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
         /// IP Address, port, encryption key, and PID to capture from
-        StartStream { ip: String, port: u16, key: Vec<u8>, pid: usize, resolution: StreamResolutionInformation, ssrc: usize },
+        StartStream { ip: String, port: u16, key: Vec<u8>, pid: pid, resolution: StreamResolutionInformation, ssrc: usize },
         StopStream,
         GetInfo
     }

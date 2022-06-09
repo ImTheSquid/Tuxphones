@@ -8,9 +8,11 @@ use x::XServerHandle;
 use u32 as pid;
 use u32 as xid;
 
-pub mod pulse;
-pub mod socket;
+mod pulse;
+mod socket;
 mod x;
+
+pub use socket::receive;
 
 pub struct CommandProcessor {
     thread: Option<thread::JoinHandle<()>>
@@ -19,8 +21,23 @@ pub struct CommandProcessor {
 impl CommandProcessor {
     pub fn new(receiver: mpsc::Receiver<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
         let thread = thread::spawn(move || {
-            let mut pulse = PulseHandle::new().unwrap();
-            let mut x = XServerHandle::new().unwrap();
+            let mut pulse = match PulseHandle::new() {
+                Ok(handle) => handle,
+                Err(e) => {
+                    eprintln!("Pulse error: {}", e);
+                    run.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
+
+            let mut x = match XServerHandle::new() {
+                Ok(handle) => handle,
+                Err(e) => {
+                    eprintln!("X Server error: {}", e);
+                    run.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
 
             loop {
                 if !run.load(Ordering::SeqCst) {
@@ -30,8 +47,27 @@ impl CommandProcessor {
 
                 match receiver.try_recv() {
                     Ok(cmd) => match cmd {
-                        SocketListenerCommand::StartStream { ip: _, port: _, key: _, pid: _, resolution: _, ssrc: _ } => todo!(),
-                        SocketListenerCommand::StopStream => todo!(),
+                        SocketListenerCommand::StartStream { ip: _, port: _, key: _, pid, resolution: _, ssrc: _ } => {
+                            match pulse.setup_audio_capture(None) {
+                                Ok(_) => {},
+                                Err(e) => {
+                                    eprintln!("Failed to setup pulse capture: {}", e);
+                                    continue;
+                                }
+                            }
+
+                            match pulse.start_capture(pid) {
+                                Ok(_) => {},
+                                Err(e) => {
+                                    eprintln!("Failed to start pulse capture: {}", e);
+                                    continue;
+                                }
+                            }
+                        },
+                        SocketListenerCommand::StopStream => {
+                            pulse.stop_capture();
+                            pulse.teardown_audio_capture();
+                        },
                         SocketListenerCommand::GetInfo => {
                             let time_start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                             println!("[GetInfo:{}] Command received", time_start);

@@ -1,6 +1,6 @@
-use std::{thread, time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
+use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
 
-use tuxphones::{pulse::PulseHandle, socket::receive::SocketListener, CommandProcessor};
+use tuxphones::{receive::SocketListener, CommandProcessor};
 
 fn main() {
     let run = Arc::new(AtomicBool::new(true));
@@ -38,7 +38,7 @@ fn main() {
     // test_pulse();
 }
 
-#[allow(dead_code)]
+/*#[allow(dead_code)]
 fn test_pulse() {
     println!("Hello, world!");
     let mut handle = PulseHandle::new().expect("Failed!");
@@ -64,4 +64,4 @@ fn test_pulse() {
 
     println!("Stop capture ====");
     handle.stop_capture();
-}
+}*/
