@@ -299,16 +299,21 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const React = BdApi.React;
 		const userMod = BdApi.findModuleByProps("getCurrentUser");
 		const Button = BdApi.findModuleByProps("BorderColors");
-		const colorStyles = BdApi.findModuleByProps("colorPrimary");
 		const Tuxphones = class extends BasePlugin {
 			onStart() {
 				if (!process.env.HOME) {
-					BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
+					BdApi.showToast("XDG_RUNTIME_DIR is not defined. Reload Discord after defining.", {
 						type: "error"
 					});
-					return;
+					throw "XDG_RUNTIME_DIR is not defined.";
 				}
 				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				if (!(0, external_fs_namespaceObject.existsSync)(this.sockPath)) {
+					BdApi.showToast("Daemon not running! Reload Discord after starting.", {
+						type: "error"
+					});
+					throw "Daemon not running!";
+				}
 				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
 				if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
 				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {

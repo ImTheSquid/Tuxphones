@@ -8,17 +8,21 @@ const React = BdApi.React;
 
 const userMod = BdApi.findModuleByProps("getCurrentUser");
 const Button = BdApi.findModuleByProps("BorderColors");
-const colorStyles = BdApi.findModuleByProps("colorPrimary");
 
 export default class extends BasePlugin {
     onStart() {
         // Make sure HOME is defined, Discord refuses to read files from XDG_RUNTIME_DIR
         if (!process.env.HOME) {
-            BdApi.showToast('XDG_RUNTIME_DIR is not defined.', {type: 'error'});
-            return;
+            BdApi.showToast('XDG_RUNTIME_DIR is not defined. Reload Discord after defining.', {type: 'error'});
+            throw 'XDG_RUNTIME_DIR is not defined.';
         }
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
+        if (!existsSync(this.sockPath)) {
+            BdApi.showToast('Daemon not running! Reload Discord after starting.', {type: 'error'});
+            throw 'Daemon not running!';
+        }
+
         this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
 
         if (existsSync(this.serverSockPath)) {
