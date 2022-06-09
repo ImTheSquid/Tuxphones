@@ -13,13 +13,26 @@ export default class extends BasePlugin {
     onStart() {
         // Make sure HOME is defined, Discord refuses to read files from XDG_RUNTIME_DIR
         if (!process.env.HOME) {
-            BdApi.showToast('XDG_RUNTIME_DIR is not defined. Reload Discord after defining.', {type: 'error'});
-            throw 'XDG_RUNTIME_DIR is not defined.';
+            BdApi.showToast('$HOME is not defined. Reload Discord after defining.', {type: 'error'});
+            throw '$HOME is not defined.';
         }
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
         if (!existsSync(this.sockPath)) {
-            BdApi.showToast('Daemon not running! Reload Discord after starting.', {type: 'error'});
+            BdApi.showConfirmationModal('Tuxphones Daemon Error', [
+                'The Tuxphones daemon was not detected.\n',
+                'If you don\'t know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:',
+                <a href='https://github.com/ImTheSquid/Tuxphones' target='_blank'>Tuxphones Github</a>,
+                ' \n', 
+                'If you\'re sure you already installed the daemon, make sure it\'s running then click "Reload Discord".'
+            ], {
+                danger: true,
+                confirmText: 'Reload Discord',
+                cancelText: 'Stop Tuxphones',
+                onConfirm: () => {
+                    location.reload();
+                }
+            })
             throw 'Daemon not running!';
         }
 
@@ -163,8 +176,6 @@ export default class extends BasePlugin {
                 }));
             });
         });
-
-        this.getInfo([]);
     }
 
     resetVars() {

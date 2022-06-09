@@ -302,15 +302,23 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const Tuxphones = class extends BasePlugin {
 			onStart() {
 				if (!process.env.HOME) {
-					BdApi.showToast("XDG_RUNTIME_DIR is not defined. Reload Discord after defining.", {
+					BdApi.showToast("$HOME is not defined. Reload Discord after defining.", {
 						type: "error"
 					});
-					throw "XDG_RUNTIME_DIR is not defined.";
+					throw "$HOME is not defined.";
 				}
 				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
 				if (!(0, external_fs_namespaceObject.existsSync)(this.sockPath)) {
-					BdApi.showToast("Daemon not running! Reload Discord after starting.", {
-						type: "error"
+					BdApi.showConfirmationModal("Tuxphones Daemon Error", ["The Tuxphones daemon was not detected.\n", "If you don't know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:", React.createElement("a", {
+						href: "https://github.com/ImTheSquid/Tuxphones",
+						target: "_blank"
+					}, "Tuxphones Github"), " \n", "If you're sure you already installed the daemon, make sure it's running then click \"Reload Discord\"."], {
+						danger: true,
+						confirmText: "Reload Discord",
+						cancelText: "Stop Tuxphones",
+						onConfirm: () => {
+							location.reload();
+						}
 					});
 					throw "Daemon not running!";
 				}
@@ -416,7 +424,6 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						this.getInfo(vals.filter((v => v.id.startsWith("window"))).map((v => parseInt(v.id.split(":")[1]))));
 					}))))));
 				}));
-				this.getInfo([]);
 			}
 			resetVars() {
 				this._ws.onmessage = this._onmessage;
