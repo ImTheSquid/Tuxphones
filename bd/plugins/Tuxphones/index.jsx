@@ -218,7 +218,7 @@ export default class extends BasePlugin {
         });
     }*/
 
-    startStream(ip, port, key, pid, resolution, ssrc) {
+    startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
@@ -226,8 +226,10 @@ export default class extends BasePlugin {
                 port: port,
                 key: key,
                 pid: pid,
+                xid: xid,
                 resolution: resolution,
-                ssrc: ssrc
+                video_ssrc: video_ssrc,
+                audio_ssrc: audio_ssrc
             }));
             this.unixClient.destroy();
         });

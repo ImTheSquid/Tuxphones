@@ -453,7 +453,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
 			}
-			startStream(ip, port, key, pid, resolution, ssrc) {
+			startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 					this.unixClient.write(JSON.stringify({
 						type: "StartStream",
@@ -461,8 +461,10 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						port,
 						key,
 						pid,
+						xid,
 						resolution,
-						ssrc
+						video_ssrc,
+						audio_ssrc
 					}));
 					this.unixClient.destroy();
 				}));

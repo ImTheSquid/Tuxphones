@@ -50,7 +50,17 @@ impl CommandProcessor {
                     Ok(cmd) => {
                         let time_start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                         match cmd {
-                            SocketListenerCommand::StartStream { ip: _, port: _, key: _, pid, resolution: _, frame_rate: _, ssrc: _ } => {
+                            SocketListenerCommand::StartStream { 
+                                ip: _, 
+                                port: _, 
+                                key: _, 
+                                pid, 
+                                xid: _, 
+                                resolution: _, 
+                                frame_rate: _, 
+                                video_ssrc: _, 
+                                audio_ssrc: _
+                            } => {
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
                                     Err(e) => {
