@@ -28,9 +28,9 @@ pub mod receive {
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
         /// IP Address, port, encryption key, and PID to capture from
-        StartStream { ip: String, port: u16, key: Vec<u8>, pid: pid, resolution: StreamResolutionInformation, ssrc: usize },
+        StartStream { ip: String, port: u16, key: Vec<u8>, pid: pid, resolution: StreamResolutionInformation, frame_rate: u8, ssrc: usize },
         StopStream,
-        GetInfo
+        GetInfo { xids: Vec<u32> }
     }
 
     impl SocketListener {
@@ -121,7 +121,7 @@ pub mod send {
         apps: &'a Vec<Application>
     }
 
-    #[derive(Serialize)]
+    #[derive(Serialize, Debug)]
     #[serde(tag = "type")]
     pub struct Application {
         pub name: String,

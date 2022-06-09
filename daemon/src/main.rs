@@ -20,7 +20,7 @@ fn main() {
 
     let (sender, receiver) = mpsc::channel();
 
-    let mut socket_watcher = match SocketListener::new(sender.clone(), Arc::clone(&run), Duration::from_secs(2)) {
+    let mut socket_watcher = match SocketListener::new(sender.clone(), Arc::clone(&run), Duration::from_millis(500)) {
         Ok(s) => s,
         Err(_) => {
             eprintln!("Error creating socket watcher!");
@@ -28,7 +28,7 @@ fn main() {
         }
     };
 
-    let mut command_processor = CommandProcessor::new(receiver, Arc::clone(&run), Duration::from_secs(2));
+    let mut command_processor = CommandProcessor::new(receiver, Arc::clone(&run), Duration::from_millis(500));
 
     println!("Daemon started");
 

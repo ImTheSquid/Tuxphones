@@ -255,21 +255,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}
 			}
 		};
-		var __webpack_modules__ = {
-			113: module => {
-				module.exports = BdApi.React;
-			}
-		};
-		var __webpack_module_cache__ = {};
-		function __webpack_require__(moduleId) {
-			var cachedModule = __webpack_module_cache__[moduleId];
-			if (void 0 !== cachedModule) return cachedModule.exports;
-			var module = __webpack_module_cache__[moduleId] = {
-				exports: {}
-			};
-			__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
-			return module.exports;
-		}
+		var __webpack_require__ = {};
 		(() => {
 			__webpack_require__.d = (exports, definition) => {
 				for (var key in definition)
@@ -293,201 +279,228 @@ function buildPlugin([BasePlugin, PluginApi]) {
 			};
 		})();
 		var __webpack_exports__ = {};
-		(() => {
-			__webpack_require__.r(__webpack_exports__);
-			__webpack_require__.d(__webpack_exports__, {
-				default: () => Tuxphones
-			});
-			const external_fs_namespaceObject = require("fs");
-			const external_net_namespaceObject = require("net");
-			const external_path_namespaceObject = require("path");
-			var React = __webpack_require__(113);
-			const {
-				Logger,
-				Patcher,
-				WebpackModules,
-				DiscordModules,
-				ContextMenu
-			} = PluginApi;
-			const {
-				Dispatcher
-			} = DiscordModules;
-			const userMod = BdApi.findModuleByProps("getCurrentUser");
-			const Tuxphones = class extends BasePlugin {
-				onStart() {
-					if (!process.env.HOME) {
-						BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
-							type: "error"
-						});
-						return;
-					}
-					this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
-					this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
-					if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
-					this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
-						let data = [];
-						sock.on("data", (d => data += d));
-						sock.on("end", (() => {
-							this.parseData(data);
-							data = [];
-						}));
-					}));
-					this.unixServer.listen(this.serverSockPath, (() => Logger.log("Server bound")));
-					this.wsOnMessage = this.wsOnMessage.bind(this);
-					this._onmessage = null;
-					this._ws = null;
-					Patcher.before(WebSocket.prototype, "send", ((that, [arg]) => {
-						if ("string" !== typeof arg || !that.url.includes("discord") || this._ws && this._ws !== that) return;
-						const json = JSON.parse(arg);
-						console.log("%cWS SEND FRAME ================================", "color: green; font-size: large; margin-top: 20px;");
-						if (0 === json.op && json.d.streams.length > 0 && "screen" === json.d.streams[0].type && json.d.user_id === userMod.getCurrentUser().id) {
-							if (this._ws) this.resetVars();
-							this._ws = that;
-							this._onmessage = that.onmessage;
-							that.onmessage = this.wsOnMessage;
-						} else if (12 === json.op && 0 !== json.d.video_ssrc && 0 !== json.d.rtx_ssrc) {
-							console.log("%cRECEIVED SSRC INFORMATION", "color: aqua; font-size: xx-large;");
-							Logger.log("Video SSRC:");
-							Logger.log(json.d.video_ssrc);
-							Logger.log("RTX SSRC:");
-							Logger.log(json.d.rtx_ssrc);
-							this.ssrc = json.d.video_ssrc;
-							const res = json.d.streams[0].max_resolution;
-							this.resolution = {
-								width: res.width,
-								height: res.height,
-								is_fixed: "fixed" === res.type
-							};
-						}
-						Logger.log(json);
-						console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
-					}));
-					Patcher.before(WebSocket.prototype, "close", ((that, [arg]) => {
-						Logger.log("CLOSE!");
-						Logger.log(that);
-						Logger.log(arg);
-						if (this._ws === that) {
-							console.log("%cSCREENSHARE CLOSED! Unlocking log...", "color: red; font-size: x-large;");
-							if (this._ws) this.resetVars();
-						}
-					}));
-					ContextMenu.getDiscordMenu("Confirm").then((m => {
-						Patcher.after(m, "default", ((that, [arg], ret) => {
-							Logger.log(that);
-							Logger.log(arg);
-							Logger.log(ret);
-							if (!Array.isArray(ret.props.children)) return;
-							if (arg.sound) ret.props.children[1] = React.createElement("p", {
-								style: {
-									color: "green",
-									padding: "0px 16px"
-								}
-							}, "Tuxphones sound enabled!");
-							else ret.props.children[1] = React.createElement("p", {
-								style: {
-									color: "red",
-									padding: "0px 16px"
-								}
-							}, "Tuxphones not available.");
-						}));
-					}));
-					new Promise((resolve => {
-						const cancel = WebpackModules.addListener((module => {
-							if (!module.default || !module.DesktopSources) return;
-							resolve(module);
-							cancel();
-						}));
-					})).then((m => {
-						Patcher.after(m, "default", ((_, __, ret) => ret.then((vals => new Promise((res => {
-							Dispatcher.subscribe("TUX_APPS", (function dispatch(e) {
-								Dispatcher.unsubscribe("TUX_APPS", dispatch);
-								res(vals.map((v => {
-									v.sound = v.id.startsWith("window") && e.apps.includes(v.id.split(":")[1]);
-									return v;
-								})));
-							}));
-							this.getInfo();
-						}))))));
-					}));
-					this.getInfo();
+		__webpack_require__.r(__webpack_exports__);
+		__webpack_require__.d(__webpack_exports__, {
+			default: () => Tuxphones
+		});
+		const external_fs_namespaceObject = require("fs");
+		const external_net_namespaceObject = require("net");
+		const external_path_namespaceObject = require("path");
+		const {
+			Logger,
+			Patcher,
+			WebpackModules,
+			DiscordModules,
+			ContextMenu
+		} = PluginApi;
+		const {
+			Dispatcher
+		} = DiscordModules;
+		const React = BdApi.React;
+		const userMod = BdApi.findModuleByProps("getCurrentUser");
+		const Button = BdApi.findModuleByProps("BorderColors");
+		const colorStyles = BdApi.findModuleByProps("colorPrimary");
+		const Tuxphones = class extends BasePlugin {
+			onStart() {
+				if (!process.env.HOME) {
+					BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
+						type: "error"
+					});
+					return;
 				}
-				resetVars() {
-					this._ws.onmessage = this._onmessage;
-					this._ws = null;
-					this._onmessage = null;
-				}
-				wsOnMessage(m) {
-					this._onmessage(m);
-					const json = JSON.parse(m.data);
-					console.log("%cWS RECV FRAME ================================", "color: orange; font-size: large; margin-top: 20px;");
-					if (4 === json.op) {
-						console.log("%cRECEIVED CODEC AND ENCRYPTION INFORMATION", "color: aqua; font-size: xx-large;");
-						Logger.log("Audio Codec:");
-						Logger.log(json.d.audio_codec);
-						Logger.log("Encryption Mode:");
-						Logger.log(json.d.mode);
-						Logger.log("Secret key:");
-						Logger.log(json.d.secret_key);
+				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
+				if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
+				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
+					let data = [];
+					sock.on("data", (d => data += d));
+					sock.on("end", (() => {
+						this.parseData(data);
+						data = [];
+					}));
+				}));
+				this.unixServer.listen(this.serverSockPath, (() => Logger.log("Server bound")));
+				this.wsOnMessage = this.wsOnMessage.bind(this);
+				this._onmessage = null;
+				this._ws = null;
+				Patcher.before(WebSocket.prototype, "send", ((that, [arg]) => {
+					if ("string" !== typeof arg || !that.url.includes("discord") || this._ws && this._ws !== that) return;
+					const json = JSON.parse(arg);
+					console.log("%cWS SEND FRAME ================================", "color: green; font-size: large; margin-top: 20px;");
+					if (0 === json.op && json.d.streams.length > 0 && "screen" === json.d.streams[0].type && json.d.user_id === userMod.getCurrentUser().id) {
+						if (this._ws) this.resetVars();
+						this._ws = that;
+						this._onmessage = that.onmessage;
+						that.onmessage = this.wsOnMessage;
+					} else if (12 === json.op && 0 !== json.d.video_ssrc && 0 !== json.d.rtx_ssrc) {
+						console.log("%cRECEIVED SSRC INFORMATION", "color: aqua; font-size: xx-large;");
+						Logger.log("Video SSRC:");
+						Logger.log(json.d.video_ssrc);
+						Logger.log("RTX SSRC:");
+						Logger.log(json.d.rtx_ssrc);
+						this.ssrc = json.d.video_ssrc;
+						const res = json.d.streams[0].max_resolution;
+						this.resolution = {
+							width: res.width,
+							height: res.height,
+							is_fixed: "fixed" === res.type
+						};
 					}
 					Logger.log(json);
-					console.log("%cWS END RECV FRAME ============================", "color: orange; font-size: large; margin-bottom: 20px;");
-				}
-				parseData(data) {
-					let obj = JSON.parse(data);
-					Logger.log(obj);
-					switch (obj.type) {
-						case "ApplicationList":
-							Dispatcher.dirtyDispatch({
-								type: "TUX_APPS",
-								apps: obj.apps
-							});
-							break;
-						case "ConnectionId":
-							const {
-								id
-							} = obj;
-							break;
-						default:
-							Logger.err(`Received unknown command type: ${obj.type}`);
+					console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
+				}));
+				Patcher.before(WebSocket.prototype, "close", ((that, [arg]) => {
+					Logger.log("CLOSE!");
+					Logger.log(that);
+					Logger.log(arg);
+					if (this._ws === that) {
+						console.log("%cSCREENSHARE CLOSED! Unlocking log...", "color: red; font-size: x-large;");
+						if (this._ws) this.resetVars();
 					}
-				}
-				startStream(ip, port, key, pid, resolution, ssrc) {
-					this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-						this.unixClient.write(JSON.stringify({
-							type: "StartStream",
-							ip,
-							port,
-							key,
-							pid,
-							resolution,
-							ssrc
-						}));
-						this.unixClient.destroy();
+				}));
+				ContextMenu.getDiscordMenu("GoLiveModal").then((m => {
+					Patcher.after(m, "default", ((_, [arg], ret) => {
+						Logger.log(ret);
+						if (2 == ret.props.children.props.children[2].props.children[1].props.activeSlide && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) ret.props.children.props.children[2].props.children[2].props.children[0] = React.createElement("div", {
+							style: {
+								"margin-right": "8px"
+							}
+						}, React.createElement(Button, {
+							onClick: () => {},
+							size: Button.Sizes.SMALL
+						}, "Go Live with Sound"));
 					}));
-				}
-				endStream() {
-					this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-						this.unixClient.write(JSON.stringify({
-							type: "StopStream"
-						}));
-						this.unixClient.destroy();
+				}));
+				ContextMenu.getDiscordMenu("SourceSelect").then((m => {
+					Patcher.after(m, "default", ((_, [arg]) => {}));
+				}));
+				ContextMenu.getDiscordMenu("Confirm").then((m => {
+					Patcher.after(m, "default", ((_, [arg], ret) => {
+						if (!Array.isArray(ret.props.children)) return;
+						Logger.log(arg);
+						if (arg.selectedSource.sound) ret.props.children[1] = React.createElement("p", {
+							style: {
+								color: "green",
+								padding: "0px 16px"
+							}
+						}, "Tuxphones sound enabled!");
+						else ret.props.children[1] = React.createElement("p", {
+							style: {
+								color: "red",
+								padding: "0px 16px"
+							}
+						}, "Tuxphones not available.");
 					}));
-				}
-				getInfo() {
-					this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-						this.unixClient.write(JSON.stringify({
-							type: "GetInfo"
-						}));
-						this.unixClient.destroy();
+				}));
+				new Promise((resolve => {
+					const cancel = WebpackModules.addListener((module => {
+						if (!module.default || !module.DesktopSources) return;
+						resolve(module);
+						cancel();
 					}));
+				})).then((m => {
+					Patcher.after(m, "default", ((_, __, ret) => ret.then((vals => new Promise((res => {
+						Dispatcher.subscribe("TUX_APPS", (function dispatch(e) {
+							Dispatcher.unsubscribe("TUX_APPS", dispatch);
+							Logger.log(vals);
+							Logger.log(e.apps);
+							res(vals.map((v => {
+								let found = e.apps.find((el => el.xid == v.id.split(":")[1]));
+								if (v.id.startsWith("window") && found) v.sound = found;
+								else v.sound = null;
+								return v;
+							})));
+						}));
+						this.getInfo(vals.filter((v => v.id.startsWith("window"))).map((v => parseInt(v.id.split(":")[1]))));
+					}))))));
+				}));
+				this.getInfo([]);
+			}
+			resetVars() {
+				this._ws.onmessage = this._onmessage;
+				this._ws = null;
+				this._onmessage = null;
+			}
+			wsOnMessage(m) {
+				this._onmessage(m);
+				const json = JSON.parse(m.data);
+				console.log("%cWS RECV FRAME ================================", "color: orange; font-size: large; margin-top: 20px;");
+				if (4 === json.op) {
+					console.log("%cRECEIVED CODEC AND ENCRYPTION INFORMATION", "color: aqua; font-size: xx-large;");
+					Logger.log("Audio Codec:");
+					Logger.log(json.d.audio_codec);
+					Logger.log("Encryption Mode:");
+					Logger.log(json.d.mode);
+					Logger.log("Secret key:");
+					Logger.log(json.d.secret_key);
 				}
-				onStop() {
-					if (this.unixServer && this.unixServer.listening) this.unixServer.close();
-					if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
-					if (this._ws) this.resetVars();
+				Logger.log(json);
+				console.log("%cWS END RECV FRAME ============================", "color: orange; font-size: large; margin-bottom: 20px;");
+			}
+			parseData(data) {
+				let obj = JSON.parse(data);
+				Logger.log(obj);
+				switch (obj.type) {
+					case "ApplicationList":
+						Dispatcher.dirtyDispatch({
+							type: "TUX_APPS",
+							apps: obj.apps
+						});
+						break;
+					case "ConnectionId":
+						const {
+							id
+						} = obj;
+						break;
+					default:
+						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
-			};
-		})();
+			}
+			startStream(ip, port, key, pid, resolution, ssrc) {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "StartStream",
+						ip,
+						port,
+						key,
+						pid,
+						resolution,
+						ssrc
+					}));
+					this.unixClient.destroy();
+				}));
+			}
+			endStream() {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "StopStream"
+					}));
+					this.unixClient.destroy();
+				}));
+			}
+			getInfo(xids) {
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
+					this.unixClient.write(JSON.stringify({
+						type: "GetInfo",
+						xids
+					}));
+					this.unixClient.destroy();
+				}));
+				this.unixClient.on("error", (e => {
+					Logger.err(`[GetInfo] Socket client error: ${e}`);
+					Dispatcher.dirtyDispatch({
+						type: "TUX_APPS",
+						apps: []
+					});
+				}));
+			}
+			onStop() {
+				if (this.unixServer && this.unixServer.listening) this.unixServer.close();
+				if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
+				if (this._ws) this.resetVars();
+				Patcher.unpatchAll();
+			}
+		};
 		module.exports.LibraryPluginHack = __webpack_exports__;
 	})();
 	const PluginExports = module.exports.LibraryPluginHack;

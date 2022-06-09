@@ -1,14 +1,13 @@
-use std::{collections::HashMap, time::{SystemTime, Duration}};
-
 use sysinfo::{SystemExt, ProcessExt, PidExt};
-use xcb::res::{QueryClientIds, QueryClients, ClientIdSpec, ClientIdMask};
+use xcb::res::{QueryClientIds, ClientIdSpec, ClientIdMask};
 use crate::{pid, xid};
 
 pub struct XServerHandle {
     connection: xcb::Connection,
     /// Stores a cache of pids to xids
-    cache: HashMap<pid, Option<xid>>,
-    last_cache_wipe: Option<SystemTime>
+    // cache: HashMap<pid, Option<xid>>,
+    // last_cache_wipe: Option<SystemTime>,
+    xorg_procs: Vec<pid>
 }
 
 impl XServerHandle {
@@ -16,11 +15,19 @@ impl XServerHandle {
         // Connect to the server
         let (conn, _) = xcb::Connection::connect(None)?;
 
-        Ok(XServerHandle { connection: conn, cache: HashMap::new(), last_cache_wipe: None })
+        // Get the current Xorg process to make sure XServer isn't falsely recognizing windows (cached)
+        let mut system = sysinfo::System::new();
+        system.refresh_processes();
+        let xorg_procs = system.processes_by_name("Xorg")
+            .into_iter()
+            .map(|p| p.pid().as_u32())
+            .collect();
+
+        Ok(XServerHandle { connection: conn, /*cache: HashMap::new(), last_cache_wipe: None,*/ xorg_procs })
     }
 
     /// Attempts to derive a PID from an XID
-    fn pid_from_xid(self: &Self, xid: xid) -> Result<Option<pid>, xcb::Error> {
+    pub fn pid_from_xid(self: &Self, xid: xid) -> Result<Option<pid>, xcb::Error> {
         // Create request
         let cookie = self.connection.send_request(&QueryClientIds {
             specs: &[ClientIdSpec {
@@ -31,13 +38,8 @@ impl XServerHandle {
 
         let reply = self.connection.wait_for_reply(cookie)?;
 
-        // Get the current Xorg process to make sure XServer isn't falsely recognizing windows
-        let mut system = sysinfo::System::new();
-        system.refresh_processes();
-        let xorg_procs = system.processes_by_name("Xorg").into_iter().map(|p| p.pid().as_u32());
-
         if let Some(val) = reply.ids().next() {
-            return Ok(if val.value().len() > 0 && !xorg_procs.into_iter().any(|v| v == val.value()[0]) {
+            return Ok(if val.value().len() > 0 && !self.xorg_procs.iter().any(|v| *v == val.value()[0]) {
                 Some(val.value()[0])
             } else {
                 None
@@ -47,13 +49,13 @@ impl XServerHandle {
         Ok(None)
     }
 
-    /// Checks the cache for a value and refeshes cache if needed
+    /*/// Checks the cache for a value and refeshes cache if needed
     fn check_cache(self: &mut Self, pid: pid) -> Option<Option<xid>> {
         if let Some(wipe) = self.last_cache_wipe {
             // If it's been more than 5 minutes since last cache wipe, wipe again
             if SystemTime::now().duration_since(wipe).unwrap_or(Duration::from_secs(10000000)) > Duration::from_secs(5 * 60) {
-                self.last_cache_wipe = Some(SystemTime::now());
-                self.cache.clear();
+                println!("PID-XID cache expired");
+                self.clear_cache();
             }
         }
 
@@ -62,6 +64,11 @@ impl XServerHandle {
         }
 
         None
+    }
+
+    pub fn clear_cache(self: &mut Self) {
+        self.cache.clear();
+        self.last_cache_wipe = Some(SystemTime::now());
     }
 
     /// Finds XID from a PID or process name (case sensitive)
@@ -114,5 +121,5 @@ impl XServerHandle {
 
         self.cache.insert(pulse_pid, None);
         None
-    }
+    }*/
 }

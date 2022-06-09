@@ -4,8 +4,11 @@ import { join } from 'path';
 
 const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = PluginApi;
 const { Dispatcher } = DiscordModules;
+const React = BdApi.React;
 
 const userMod = BdApi.findModuleByProps("getCurrentUser");
+const Button = BdApi.findModuleByProps("BorderColors");
+const colorStyles = BdApi.findModuleByProps("colorPrimary");
 
 export default class extends BasePlugin {
     onStart() {
@@ -86,14 +89,44 @@ export default class extends BasePlugin {
             }
         });
 
-        ContextMenu.getDiscordMenu('Confirm').then(m => {
-            Patcher.after(m, 'default', (that, [arg], ret) => {
-                Logger.log(that)
-                Logger.log(arg)
+        ContextMenu.getDiscordMenu('GoLiveModal').then(m => {
+            Patcher.after(m, 'default', (_, [arg], ret) => {
+                //Logger.log(arg)
                 Logger.log(ret)
+
+                if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2 && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+                    ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
+                        {React.createElement(Button, {
+                            onClick: () => {  },
+                            size: Button.Sizes.SMALL
+                        }, "Go Live with Sound")}
+                    </div>
+                }
+                
+                // ret.props.children.props.children[2].props.children[2].props.children[0] = <button style={{color: 'red'}}>GO LIVE</button>
+                /*ret.props.children.props.children[2].props.children[2].props.children.splice(1, 0, <div style={{'margin-right': '8px'}}>
+                    {React.createElement(Button, {
+                        onClick: () => { this.clearAppCache() },
+                        size: Button.Sizes.SMALL
+                    }, "Refresh Tuxphones")}
+                </div>);*/
+            });
+        });
+
+        ContextMenu.getDiscordMenu('SourceSelect').then(m => {
+            Patcher.after(m, 'default', (_, [arg], ret) => {
+                //Logger.log(arg)
+                //Logger.log(ret)
+            });
+        })
+
+        ContextMenu.getDiscordMenu('Confirm').then(m => {
+            Patcher.after(m, 'default', (_, [arg], ret) => {
                 if (!Array.isArray(ret.props.children)) return;
+                Logger.log(arg)
+                //Logger.log(ret)
     
-                if (arg.sound) {
+                if (arg.selectedSource.sound) {
                     ret.props.children[1] = <p style={{color: 'green', padding: '0px 16px'}}>Tuxphones sound enabled!</p>
                 } else {
                     ret.props.children[1] = <p style={{color: 'red', padding: '0px 16px'}}>Tuxphones not available.</p>
@@ -115,19 +148,26 @@ export default class extends BasePlugin {
                         Dispatcher.unsubscribe('TUX_APPS', dispatch);
 
                         // Check against window IDs to see if comaptible with sound
+                        Logger.log(vals);
+                        Logger.log(e.apps);
                         res(vals.map(v => {
-                            v.sound = v.id.startsWith('window') && e.apps.includes(v.id.split(':')[1]);
+                            let found = e.apps.find(el => el.xid == v.id.split(':')[1]);
+                            if (v.id.startsWith('window') && found) {
+                                v.sound = found;
+                            } else {
+                                v.sound = null;
+                            }
                             return v;
                         }));
                     }
     
                     Dispatcher.subscribe('TUX_APPS', f);
-                    this.getInfo();
+                    this.getInfo(vals.filter(v => v.id.startsWith('window')).map(v => parseInt(v.id.split(':')[1])));
                 }));
             });
         });
 
-        this.getInfo();
+        this.getInfo([]);
     }
 
     resetVars() {
@@ -176,6 +216,15 @@ export default class extends BasePlugin {
         }
     }
 
+    /*clearAppCache() {
+        this.unixClient = createConnection(this.sockPath, () => {
+            this.unixClient.write(JSON.stringify({
+                type: 'ClearAppCache'
+            }));
+            this.unixClient.destroy();
+        });
+    }*/
+
     startStream(ip, port, key, pid, resolution, ssrc) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
@@ -200,12 +249,20 @@ export default class extends BasePlugin {
         });
     }
 
-    getInfo() {
+    getInfo(xids) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
-                type: 'GetInfo'
+                type: 'GetInfo',
+                xids: xids
             }));
             this.unixClient.destroy();
+        });
+        this.unixClient.on('error', e => {
+            Logger.err(`[GetInfo] Socket client error: ${e}`);
+            Dispatcher.dirtyDispatch({
+                type: 'TUX_APPS',
+                apps: []
+            });
         });
     }
 
@@ -221,5 +278,7 @@ export default class extends BasePlugin {
         if (this._ws) {
             this.resetVars();
         }
+
+        Patcher.unpatchAll();
     }
 }
