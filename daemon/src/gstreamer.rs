@@ -1,6 +1,6 @@
 use std::sync::Mutex;
 
-use gst::{Element, glib, StateChangeError, StateChangeSuccess};
+use gst::{Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
@@ -13,18 +13,29 @@ static HANDLES_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 pub enum GstInitializationError {
     Init(glib::Error),
     Element(glib::BoolError),
+    Pad(PadLinkError),
 }
 
 pub struct H264Settings {
     pub nvidia_encoder: bool,
 }
 
-impl H264Settings {}
-
 pub enum VideoEncoderType {
     H264(H264Settings),
     VP8,
     VP9,
+}
+
+pub enum EncryptionAlgorithm {
+    aead_aes256_gcm
+}
+
+impl EncryptionAlgorithm {
+    pub fn to_gst_str(&self) -> &'static str {
+        match self {
+            EncryptionAlgorithm::aead_aes256_gcm => "aes-256-gcm",
+        }
+    }
 }
 
 impl From<glib::Error> for GstInitializationError {
@@ -36,6 +47,12 @@ impl From<glib::Error> for GstInitializationError {
 impl From<glib::BoolError> for GstInitializationError {
     fn from(error: glib::BoolError) -> Self {
         GstInitializationError::Element(error)
+    }
+}
+
+impl From<PadLinkError> for GstInitializationError {
+    fn from(error: PadLinkError) -> Self {
+        GstInitializationError::Pad(error)
     }
 }
 
@@ -71,8 +88,12 @@ impl Drop for GstHandle {
     }
 }
 
-impl GstHandle {
-    pub fn new(encoder_to_use: VideoEncoderType, audio_ssrc: u32, xid: u64, video_ssrc: u32, discord_address: &str) -> Result<Self, GstInitializationError> {
+impl<'a> GstHandle {
+    pub fn new(
+        encoder_to_use: VideoEncoderType, xid: u64,
+        audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
+        discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
+    ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
 
@@ -139,6 +160,20 @@ impl GstHandle {
 
         //--DESTINATION--
 
+        //mux
+        let rtpmux = gst::ElementFactory::make("rtpmux", None)?;
+        rtpmux.set_property("ssrc", rtx_ssrc);
+        rtpmux.add_pad(&gst::GhostPad::new(Some("vsink"), gst::PadDirection::Sink)).unwrap();
+        rtpmux.add_pad(&gst::GhostPad::new(Some("asink"), gst::PadDirection::Sink)).unwrap();
+        let video_sink = rtpmux.static_pad("vsink").unwrap();
+        let audio_sink = rtpmux.static_pad("asink").unwrap();
+
+        //encryption
+        let srtpenc = gst::ElementFactory::make("srtpenc", None)?;
+        srtpenc.set_property_from_str("rtcp-cipher", encryption_algorithm.to_gst_str());
+        srtpenc.set_property("key", gst::Buffer::from_slice(key));
+
+
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
 
@@ -155,13 +190,13 @@ impl GstHandle {
 
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &promise]);
 
-        //--COMMON--
 
-        let queue = gst::ElementFactory::make("queue", None)?;
-
-
-        pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
-        Element::link_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
+        gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
+        gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
+        pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &srtpenc, &webrtcbin, &pulsesrc, &audioconvert, &opusenc, &rtpopuspay, &rtpmux])?;
+        Element::link_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay])?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
+        Element::link_many(&[&rtpmux, &webrtcbin])?;
 
         Ok(GstHandle {
             pipeline,
