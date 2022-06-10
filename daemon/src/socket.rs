@@ -16,21 +16,50 @@ pub mod receive {
         UnableToSetNonBlocking
     }
 
+    /// Holds information relating to stream resolution
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
         pub width: u32,
         pub height: u32,
+        /// Whether or not the stream resolution can change
         pub is_fixed: bool
     }
 
+    /// Commands that can be received from the client plugin
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
-        /// IP Address, port, encryption key, and PID to capture from
-        StartStream { ip: String, port: u16, key: Vec<u8>, pid: pid, xid: xid, resolution: StreamResolutionInformation, frame_rate: u8, video_ssrc: usize, audio_ssrc: usize },
+        /// Starts a new soundshare stream
+        StartStream { 
+            /// IP Address
+            ip: String, 
+            /// Port
+            port: u16,
+            /// Encryption key 
+            key: Vec<u8>, 
+            /// Pulse PID
+            pid: pid, 
+            /// XID
+            xid: xid, 
+            /// Target resolution
+            resolution: StreamResolutionInformation, 
+            /// Target framerate
+            frame_rate: u8, 
+            /// Video SSRC
+            video_ssrc: usize,
+            /// Audio SSRC 
+            audio_ssrc: usize,
+            /// RTX SSRC
+            rtx_ssrc: usize
+        },
+        /// Stops the currently-running stream
         StopStream,
-        GetInfo { xids: Vec<u32> }
+        /// Gets info on which windows can have sound captured
+        GetInfo { 
+            /// XIDs available to Discord
+            xids: Vec<u32> 
+        }
     }
 
     impl SocketListener {

@@ -59,7 +59,8 @@ impl CommandProcessor {
                                 resolution: _, 
                                 frame_rate: _, 
                                 video_ssrc: _, 
-                                audio_ssrc: _
+                                audio_ssrc: _,
+                                rtx_ssrc: _
                             } => {
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
@@ -111,7 +112,7 @@ impl CommandProcessor {
                                 }
 
                                 // If there are more Pulse applications to resolve, lookup process name and try to find pair with given PID for XID
-                                // Find all processes with given case-insensitive name
+                                // Find all processes with given name
                                 let mut system = sysinfo::System::new();
                                 system.refresh_processes();
                                 let processes_with_cmd: Vec<(&Pid, &Process)> = system.processes()
@@ -121,14 +122,18 @@ impl CommandProcessor {
                                 
                                 for app in &apps {
                                     for (proc_pid, process) in &processes_with_cmd {
-                                        let split: Vec<&str> = process.cmd()[0].split(' ').collect();
-                                        if split[0].ends_with(&format!("/{}", &app.name)) {
+                                        let cmd_strings: Vec<&str> = process.cmd()[0].split(' ').collect();
+                                        // If the command matches the Pulse application name
+                                        if cmd_strings[0].ends_with(&format!("/{}", &app.name)) {
+                                            // And the PID of an XID window matches the PID of the found process
                                             if let Some((xid, _)) = xid_pid.iter().find(|(_, pid)| *pid == proc_pid.as_u32()) {
+                                                // Push the application and go to the next one
                                                 found_applications.push(Application {
                                                     name: app.name.clone(),
                                                     pid: app.pid,
                                                     xid: *xid,
                                                 });
+                                                break;
                                             }
                                         }
                                     }

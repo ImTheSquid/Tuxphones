@@ -224,16 +224,7 @@ export default class extends BasePlugin {
         }
     }
 
-    /*clearAppCache() {
-        this.unixClient = createConnection(this.sockPath, () => {
-            this.unixClient.write(JSON.stringify({
-                type: 'ClearAppCache'
-            }));
-            this.unixClient.destroy();
-        });
-    }*/
-
-    startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc) {
+    startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc, rtx_ssrc) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
@@ -244,7 +235,8 @@ export default class extends BasePlugin {
                 xid: xid,
                 resolution: resolution,
                 video_ssrc: video_ssrc,
-                audio_ssrc: audio_ssrc
+                audio_ssrc: audio_ssrc,
+                rtx_ssrc: rtx_ssrc
             }));
             this.unixClient.destroy();
         });
