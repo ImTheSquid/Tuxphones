@@ -351,13 +351,16 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						Logger.log(json.d.video_ssrc);
 						Logger.log("RTX SSRC:");
 						Logger.log(json.d.rtx_ssrc);
-						this.ssrc = json.d.video_ssrc;
+						this.videoSsrc = json.d.video_ssrc;
+						this.audioSsrc = json.d.audio_ssrc;
+						this.rtxSsrc = json.d.rtx_ssrc;
 						const res = json.d.streams[0].max_resolution;
 						this.resolution = {
 							width: res.width,
 							height: res.height,
 							is_fixed: "fixed" === res.type
 						};
+						this.frameRate = json.d.streams[0].max_framerate;
 					}
 					Logger.log(json);
 					console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
@@ -426,6 +429,14 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}));
 			}
 			resetVars() {
+				this.videoSsrc = null;
+				this.audioSsrc = null;
+				this.rtxSsrc = null;
+				this.resolution = null;
+				this.frameRate = null;
+				this.key = null;
+				this.ip = null;
+				this.port = null;
 				this._ws.onmessage = this._onmessage;
 				this._ws = null;
 				this._onmessage = null;
@@ -442,6 +453,11 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					Logger.log(json.d.mode);
 					Logger.log("Secret key:");
 					Logger.log(json.d.secret_key);
+					this.key = json.d.secret_key;
+				} else if (2 === json.op) {
+					console.log("%cRECEIVED IP AND PORT", "color: aqua; font-size: xx-large;");
+					this.ip = json.d.ip;
+					this.port = json.d.port;
 				}
 				Logger.log(json);
 				console.log("%cWS END RECV FRAME ============================", "color: orange; font-size: large; margin-bottom: 20px;");
@@ -465,7 +481,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
 			}
-			startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc, rtx_ssrc) {
+			startStream(ip, port, key, pid, xid, resolution, frameRate, video_ssrc, audio_ssrc, rtx_ssrc) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 					this.unixClient.write(JSON.stringify({
 						type: "StartStream",
@@ -475,6 +491,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						pid,
 						xid,
 						resolution,
+						frame_rate: frameRate,
 						video_ssrc,
 						audio_ssrc,
 						rtx_ssrc

@@ -81,13 +81,16 @@ export default class extends BasePlugin {
                 Logger.log('RTX SSRC:');
                 Logger.log(json.d.rtx_ssrc);
 
-                this.ssrc = json.d.video_ssrc;
+                this.videoSsrc = json.d.video_ssrc;
+                this.audioSsrc = json.d.audio_ssrc;
+                this.rtxSsrc = json.d.rtx_ssrc;
                 const res = json.d.streams[0].max_resolution;
                 this.resolution = {
                     width: res.width,
                     height: res.height,
                     is_fixed: res.type === 'fixed'
                 };
+                this.frameRate = json.d.streams[0].max_framerate;
             }
 
             Logger.log(json);
@@ -179,6 +182,15 @@ export default class extends BasePlugin {
     }
 
     resetVars() {
+        this.videoSsrc = null;
+        this.audioSsrc = null;
+        this.rtxSsrc = null;
+        this.resolution = null;
+        this.frameRate = null;
+        this.key = null;
+        this.ip = null;
+        this.port = null;
+
         this._ws.onmessage = this._onmessage;
         this._ws = null;
         this._onmessage = null;
@@ -199,6 +211,11 @@ export default class extends BasePlugin {
             Logger.log(json.d.mode);
             Logger.log('Secret key:');
             Logger.log(json.d.secret_key);
+            this.key = json.d.secret_key;
+        } else if (json.op === 2) {
+            console.log("%cRECEIVED IP AND PORT", 'color: aqua; font-size: xx-large;')
+            this.ip = json.d.ip;
+            this.port = json.d.port;
         }
 
         Logger.log(json);
@@ -224,7 +241,7 @@ export default class extends BasePlugin {
         }
     }
 
-    startStream(ip, port, key, pid, xid, resolution, video_ssrc, audio_ssrc, rtx_ssrc) {
+    startStream(ip, port, key, pid, xid, resolution, frameRate, video_ssrc, audio_ssrc, rtx_ssrc) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
@@ -234,6 +251,7 @@ export default class extends BasePlugin {
                 pid: pid,
                 xid: xid,
                 resolution: resolution,
+                frame_rate: frameRate,
                 video_ssrc: video_ssrc,
                 audio_ssrc: audio_ssrc,
                 rtx_ssrc: rtx_ssrc

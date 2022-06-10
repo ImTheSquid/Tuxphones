@@ -48,7 +48,7 @@ impl CommandProcessor {
 
                 match receiver.try_recv() {
                     Ok(cmd) => {
-                        let time_start = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                        let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                         match cmd {
                             SocketListenerCommand::StartStream { 
                                 ip: _, 
@@ -62,6 +62,7 @@ impl CommandProcessor {
                                 audio_ssrc: _,
                                 rtx_ssrc: _
                             } => {
+                                println!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
                                     Err(e) => {
@@ -77,13 +78,19 @@ impl CommandProcessor {
                                         continue;
                                     }
                                 }
+
+                                println!("[StartStream:{}] Command processed (stream started)", start_time);
                             },
                             SocketListenerCommand::StopStream => {
+                                println!("[StopStream:{}] Command received", start_time);
+
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
+
+                                println!("[StopStream:{}] Command processed (stream stopped)", start_time);
                             },
                             SocketListenerCommand::GetInfo { xids } => {
-                                println!("[GetInfo:{}] Command received", time_start);
+                                println!("[GetInfo:{}] Command received", start_time);
 
                                 // Find all PIDs of given XIDs
                                 let xid_pid: Vec<(xid, pid)> = xids
@@ -140,7 +147,7 @@ impl CommandProcessor {
                                 }
 
                                 match socket::send::application_info(&found_applications) {
-                                    Ok(_) => println!("[GetInfo:{}] Command processed (applications found: {})", time_start, found_applications.len()),
+                                    Ok(_) => println!("[GetInfo:{}] Command processed (applications found: {})", start_time, found_applications.len()),
                                     Err(e) => eprintln!("Failed to send application data: {}", e)
                                 }
                             }
