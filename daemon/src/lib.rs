@@ -10,6 +10,7 @@ use u32 as pid;
 use u32 as xid;
 
 mod pulse;
+mod gstreamer;
 mod socket;
 mod x;
 

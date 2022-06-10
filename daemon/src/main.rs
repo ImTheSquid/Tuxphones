@@ -1,5 +1,4 @@
 use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
-
 use tuxphones::{receive::SocketListener, CommandProcessor};
 
 fn main() {
