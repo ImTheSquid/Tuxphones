@@ -163,8 +163,8 @@ impl<'a> GstHandle {
         //mux
         let rtpmux = gst::ElementFactory::make("rtpmux", None)?;
         rtpmux.set_property("ssrc", rtx_ssrc);
-        rtpmux.add_pad(&gst::GhostPad::new(Some("vsink"), gst::PadDirection::Sink)).unwrap();
-        rtpmux.add_pad(&gst::GhostPad::new(Some("asink"), gst::PadDirection::Sink)).unwrap();
+        rtpmux.add_pad(&gst::GhostPad::new(Some("vsink"), gst::PadDirection::Sink))?;
+        rtpmux.add_pad(&gst::GhostPad::new(Some("asink"), gst::PadDirection::Sink))?;
         let video_sink = rtpmux.static_pad("vsink").unwrap();
         let audio_sink = rtpmux.static_pad("asink").unwrap();
 
@@ -172,10 +172,14 @@ impl<'a> GstHandle {
         let srtpenc = gst::ElementFactory::make("srtpenc", None)?;
         srtpenc.set_property_from_str("rtcp-cipher", encryption_algorithm.to_gst_str());
         srtpenc.set_property("key", gst::Buffer::from_slice(key));
+        srtpenc.add_pad(&gst::GhostPad::new(Some("src"), gst::PadDirection::Src))?;
+        let srtp_src = srtpenc.static_pad("src").unwrap();
 
 
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
+        webrtcbin.add_pad(&gst::GhostPad::new(Some("sink"), gst::PadDirection::Sink))?;
+        let webrtcbin_sink = webrtcbin.static_pad("sink").unwrap();
 
         let mut sdp = SDPMessage::new();
         sdp.set_connection("IN", "IP4", discord_address, 1, 1);
@@ -191,12 +195,21 @@ impl<'a> GstHandle {
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &promise]);
 
 
+        //Link encoderpay to rtpmux video sink
         gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
+        //Link rtpopuspay to rtpmux audio sink
         gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
+
+        //Add elements to the pipeline
         pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &srtpenc, &webrtcbin, &pulsesrc, &audioconvert, &opusenc, &rtpopuspay, &rtpmux])?;
+        //Link video elements
         Element::link_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay])?;
+        //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
-        Element::link_many(&[&rtpmux, &webrtcbin])?;
+        //Link rtpmux with the encoder
+        Element::link_many(&[&rtpmux, &srtpenc])?;
+        //Link webrtcbin sink with the rtpmux src
+        gst::Pad::link(&srtp_src, &webrtcbin_sink)?;
 
         Ok(GstHandle {
             pipeline,
