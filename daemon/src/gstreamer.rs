@@ -89,8 +89,11 @@ impl Drop for GstHandle {
 }
 
 impl<'a> GstHandle {
+    /// Initialize a new stream
+    /// # Arguments
+    /// * `quality` - total pixel count, width x height (so 1080p is 1920x1080=2073600) (Not yet implemented)
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: u64,
+        encoder_to_use: VideoEncoderType, xid: u64, quality: u32, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
@@ -104,6 +107,14 @@ impl<'a> GstHandle {
 
         //Create a new ximagesrc to get video from the X server
         let ximagesrc = gst::ElementFactory::make("ximagesrc", None)?;
+
+        let capsfilter = gst::ElementFactory::make("capsfilter", None)?;
+        capsfilter.set_property("caps", &gst::Caps::new_simple(
+            "video/x-raw",
+            &[
+                ("framerate", &gst::Fraction::new(fps, 1)),
+            ],
+        ));
 
         ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
@@ -175,7 +186,6 @@ impl<'a> GstHandle {
         srtpenc.add_pad(&gst::GhostPad::new(Some("src"), gst::PadDirection::Src))?;
         let srtp_src = srtpenc.static_pad("src").unwrap();
 
-
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         webrtcbin.add_pad(&gst::GhostPad::new(Some("sink"), gst::PadDirection::Sink))?;
@@ -201,9 +211,13 @@ impl<'a> GstHandle {
         gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
 
         //Add elements to the pipeline
-        pipeline.add_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay, &srtpenc, &webrtcbin, &pulsesrc, &audioconvert, &opusenc, &rtpopuspay, &rtpmux])?;
+        pipeline.add_many(&[
+            &ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay,
+            &pulsesrc, &audioconvert, &opusenc, &rtpopuspay,
+            &rtpmux, &srtpenc,
+            &webrtcbin])?;
         //Link video elements
-        Element::link_many(&[&ximagesrc, &videoconvert, &encoder, &encoder_pay])?;
+        Element::link_many(&[&ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
         //Link rtpmux with the encoder

@@ -11,7 +11,7 @@ fn main() {
 fn test_gst() {
     println!("Hello, world!");
     let mut pipeline = GstHandle::new(
-        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 0,
+        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 0, 30, 345600,
         0, 0, 0,
         "127.0.0.1:25555", EncryptionAlgorithm::aead_aes256_gcm, vec![2, 2, 2]
     ).unwrap();
