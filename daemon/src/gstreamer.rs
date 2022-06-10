@@ -6,6 +6,8 @@ use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 
+use crate::receive::StreamResolutionInformation;
+
 //Gstreamer handles count to prevent deinitialization of gstreamer
 static HANDLES_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
@@ -16,13 +18,19 @@ pub enum GstInitializationError {
     Pad(PadLinkError),
 }
 
-pub struct H264Settings {
-    pub nvidia_encoder: bool,
+impl std::fmt::Display for GstInitializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            GstInitializationError::Init(e) => format!("Initialization error: {}", e),
+            GstInitializationError::Element(e) => format!("Element error: {}", e),
+            GstInitializationError::Pad(e) => format!("Pad error: {}", e),
+        };
+        f.write_str(&str)
+    }
 }
 
-pub struct Resolution {
-    pub width: i32,
-    pub height: i32,
+pub struct H264Settings {
+    pub nvidia_encoder: bool,
 }
 
 pub enum VideoEncoderType {
@@ -97,7 +105,7 @@ impl Drop for GstHandle {
 
 impl<'a> GstHandle {
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: u64, resolution: Option<Resolution>, fps: i32,
+        encoder_to_use: VideoEncoderType, xid: u64, resolution: StreamResolutionInformation, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
@@ -121,7 +129,7 @@ impl<'a> GstHandle {
         let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
-        if let Some(resolution) = &resolution {
+        if resolution.is_fixed {
             caps_options.push(("width", &resolution.width));
             caps_options.push(("height", &resolution.height));
         };
@@ -259,5 +267,9 @@ impl<'a> GstHandle {
 
     pub fn start(&self) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)
+    }
+
+    pub fn stop(&self) {
+        todo!()
     }
 }

@@ -1,5 +1,6 @@
-use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread};
+use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread, process::Command};
 
+use gstreamer::GstHandle;
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
 use sysinfo::{SystemExt, ProcessExt, Process, Pid, PidExt};
@@ -15,6 +16,8 @@ mod socket;
 mod x;
 
 pub use socket::receive;
+
+use crate::gstreamer::{H264Settings, VideoEncoderType, EncryptionAlgorithm};
 
 pub struct CommandProcessor {
     thread: Option<thread::JoinHandle<()>>
@@ -41,6 +44,8 @@ impl CommandProcessor {
                 }
             };
 
+            let mut gstreamer: Option<GstHandle> = None;
+
             loop {
                 if !run.load(Ordering::SeqCst) {
                     println!("Command processor shut down");
@@ -52,16 +57,16 @@ impl CommandProcessor {
                         let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                         match cmd {
                             SocketListenerCommand::StartStream { 
-                                ip: _, 
-                                port: _, 
-                                key: _, 
+                                ip, 
+                                port, 
+                                key, 
                                 pid, 
-                                xid: _, 
-                                resolution: _, 
-                                frame_rate: _, 
-                                video_ssrc: _, 
-                                audio_ssrc: _,
-                                rtx_ssrc: _
+                                xid, 
+                                resolution, 
+                                frame_rate, 
+                                video_ssrc, 
+                                audio_ssrc,
+                                rtx_ssrc
                             } => {
                                 println!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
@@ -79,11 +84,50 @@ impl CommandProcessor {
                                         continue;
                                     }
                                 }
+                                
+                                // Quick and drity check to try to detect Nvidia drivers
+                                let mut nvidia_encoder = false;
+                                if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                    nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
+                                }
+
+                                gstreamer = match GstHandle::new(
+                                    VideoEncoderType::H264(H264Settings { nvidia_encoder }),
+                                    xid.into(),
+                                    resolution,
+                                    frame_rate.into(),
+                                    audio_ssrc,
+                                    video_ssrc,
+                                    rtx_ssrc,
+                                    &format!("{}:{}", ip, port),
+                                    EncryptionAlgorithm::aead_aes256_gcm,
+                                    key
+                                ) {
+                                    Ok(handle) => Some(handle),
+                                    Err(e) => {
+                                        eprintln!("GStreamer error: {}", e);
+                                        run.store(false, Ordering::SeqCst);
+                                        continue;
+                                    },
+                                };
+
+                                match gstreamer.as_ref().unwrap().start() {
+                                    Ok(_) => {},
+                                    Err(e) => {
+                                        eprintln!("GStreamer startup error: {}", e);
+                                        continue;
+                                    }
+                                }
 
                                 println!("[StartStream:{}] Command processed (stream started)", start_time);
                             },
                             SocketListenerCommand::StopStream => {
                                 println!("[StopStream:{}] Command received", start_time);
+
+                                // TODO: GStreamer shutdown
+                                if let Some(gstreamer) = gstreamer.as_ref() {
+                                    gstreamer.stop();
+                                }
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
