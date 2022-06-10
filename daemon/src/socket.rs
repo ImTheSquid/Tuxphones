@@ -2,10 +2,13 @@ pub mod receive {
     use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
     use crate::{pid, xid};
+
+    /// Listens on a socket for commands
     pub struct SocketListener {
         thread: Option<thread::JoinHandle<()>>
     }
 
+    /// Possible errors when creating a `SocketListener`
     #[derive(Debug, Clone)]
     pub enum SocketListenerCreationError {
         /// The `HOME` environment variable is not defined.
@@ -47,18 +50,18 @@ pub mod receive {
             /// Target framerate
             frame_rate: u8, 
             /// Video SSRC
-            video_ssrc: usize,
+            video_ssrc: u32,
             /// Audio SSRC 
-            audio_ssrc: usize,
+            audio_ssrc: u32,
             /// RTX SSRC
-            rtx_ssrc: usize
+            rtx_ssrc: u32
         },
         /// Stops the currently-running stream
         StopStream,
         /// Gets info on which windows can have sound captured
         GetInfo { 
             /// XIDs available to Discord
-            xids: Vec<u32> 
+            xids: Vec<xid> 
         }
     }
 
@@ -160,8 +163,8 @@ pub mod send {
 
     #[derive(Serialize)]
     #[serde(tag = "type")]
-    struct ConnectionId {
-        id: usize
+    struct ConnectionId<'a> {
+        id: &'a str
     }
 
     pub enum SocketError {
@@ -231,7 +234,7 @@ pub mod send {
         Ok(())
     }
 
-    pub fn connection_id(id: usize) -> Result<(), SocketError> {
+    pub fn connection_id(id: &str) -> Result<(), SocketError> {
         write_socket(&ConnectionId { id })?;
 
         Ok(())
