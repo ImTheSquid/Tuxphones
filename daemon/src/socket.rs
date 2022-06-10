@@ -1,10 +1,14 @@
 pub mod receive {
     use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
+    use crate::{pid, xid};
+
+    /// Listens on a socket for commands
     pub struct SocketListener {
         thread: Option<thread::JoinHandle<()>>
     }
 
+    /// Possible errors when creating a `SocketListener`
     #[derive(Debug, Clone)]
     pub enum SocketListenerCreationError {
         /// The `HOME` environment variable is not defined.
@@ -15,21 +19,50 @@ pub mod receive {
         UnableToSetNonBlocking
     }
 
+    /// Holds information relating to stream resolution
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
         pub width: u32,
         pub height: u32,
+        /// Whether or not the stream resolution can change
         pub is_fixed: bool
     }
 
+    /// Commands that can be received from the client plugin
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
-        /// IP Address, port, encryption key, and PID to capture from
-        StartStream { ip: String, port: u16, key: Vec<u8>, pid: usize, resolution: StreamResolutionInformation, ssrc: usize },
+        /// Starts a new soundshare stream
+        StartStream { 
+            /// IP Address
+            ip: String, 
+            /// Port
+            port: u16,
+            /// Encryption key 
+            key: Vec<u8>, 
+            /// Pulse PID
+            pid: pid, 
+            /// XID
+            xid: xid, 
+            /// Target resolution
+            resolution: StreamResolutionInformation, 
+            /// Target framerate
+            frame_rate: u8, 
+            /// Video SSRC
+            video_ssrc: u32,
+            /// Audio SSRC 
+            audio_ssrc: u32,
+            /// RTX SSRC
+            rtx_ssrc: u32
+        },
+        /// Stops the currently-running stream
         StopStream,
-        GetInfo
+        /// Gets info on which windows can have sound captured
+        GetInfo { 
+            /// XIDs available to Discord
+            xids: Vec<xid> 
+        }
     }
 
     impl SocketListener {
@@ -73,8 +106,6 @@ pub mod receive {
                                 }
                             }
 
-                            println!("Command received: {}", buf);
-
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
                                 Ok(cmd) => match sender.send(cmd) {
                                     Ok(_) => {},
@@ -112,6 +143,7 @@ pub mod receive {
 
 pub mod send {
     use std::{os::unix::net::UnixStream, env, path::Path, io::Write};
+    use crate::{pid, xid};
 
     use serde::Serialize;
 
@@ -121,17 +153,18 @@ pub mod send {
         apps: &'a Vec<Application>
     }
 
-    #[derive(Serialize)]
+    #[derive(Serialize, Debug)]
     #[serde(tag = "type")]
     pub struct Application {
-        name: String,
-        pid: usize
+        pub name: String,
+        pub pid: pid,
+        pub xid: xid
     }
 
     #[derive(Serialize)]
     #[serde(tag = "type")]
-    struct ConnectionId {
-        id: usize
+    struct ConnectionId<'a> {
+        id: &'a str
     }
 
     pub enum SocketError {
@@ -140,6 +173,18 @@ pub mod send {
         NoSocket,
         SerializationFailed,
         WriteFailed
+    }
+
+    impl std::fmt::Display for SocketError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                SocketError::ConnectionFailed => "Connection failed",
+                SocketError::NoRuntimeDir => "No runtime directory",
+                SocketError::NoSocket => "No foreign socket",
+                SocketError::SerializationFailed => "Serialization failed",
+                SocketError::WriteFailed => "Socket write failed",
+            })
+        }
     }
 
     fn connect_to_socket() -> Result<UnixStream, SocketError> {
@@ -189,7 +234,7 @@ pub mod send {
         Ok(())
     }
 
-    pub fn connection_id(id: usize) -> Result<(), SocketError> {
+    pub fn connection_id(id: &str) -> Result<(), SocketError> {
         write_socket(&ConnectionId { id })?;
 
         Ok(())

@@ -283,21 +283,47 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		__webpack_require__.d(__webpack_exports__, {
 			default: () => Tuxphones
 		});
+		const external_fs_namespaceObject = require("fs");
 		const external_net_namespaceObject = require("net");
 		const external_path_namespaceObject = require("path");
 		const {
-			Logger
+			Logger,
+			Patcher,
+			WebpackModules,
+			DiscordModules,
+			ContextMenu
 		} = PluginApi;
+		const {
+			Dispatcher
+		} = DiscordModules;
+		const React = BdApi.React;
+		const userMod = BdApi.findModuleByProps("getCurrentUser");
+		const Button = BdApi.findModuleByProps("BorderColors");
 		const Tuxphones = class extends BasePlugin {
 			onStart() {
 				if (!process.env.HOME) {
-					BdApi.showToast("XDG_RUNTIME_DIR is not defined.", {
+					BdApi.showToast("$HOME is not defined. Reload Discord after defining.", {
 						type: "error"
 					});
-					return;
+					throw "$HOME is not defined.";
 				}
 				this.sockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphones.sock");
+				if (!(0, external_fs_namespaceObject.existsSync)(this.sockPath)) {
+					BdApi.showConfirmationModal("Tuxphones Daemon Error", ["The Tuxphones daemon was not detected.\n", "If you don't know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:", React.createElement("a", {
+						href: "https://github.com/ImTheSquid/Tuxphones",
+						target: "_blank"
+					}, "Tuxphones Github"), " \n", "If you're sure you already installed the daemon, make sure it's running then click \"Reload Discord\"."], {
+						danger: true,
+						confirmText: "Reload Discord",
+						cancelText: "Stop Tuxphones",
+						onConfirm: () => {
+							location.reload();
+						}
+					});
+					throw "Daemon not running!";
+				}
 				this.serverSockPath = (0, external_path_namespaceObject.join)(process.env.HOME, ".config", "tuxphonesjs.sock");
+				if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
 				this.unixServer = (0, external_net_namespaceObject.createServer)((sock => {
 					let data = [];
 					sock.on("data", (d => data += d));
@@ -307,16 +333,144 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					}));
 				}));
 				this.unixServer.listen(this.serverSockPath, (() => Logger.log("Server bound")));
-				this.endStream();
+				this.wsOnMessage = this.wsOnMessage.bind(this);
+				this._onmessage = null;
+				this._ws = null;
+				Patcher.before(WebSocket.prototype, "send", ((that, [arg]) => {
+					if ("string" !== typeof arg || !that.url.includes("discord") || this._ws && this._ws !== that) return;
+					const json = JSON.parse(arg);
+					console.log("%cWS SEND FRAME ================================", "color: green; font-size: large; margin-top: 20px;");
+					if (0 === json.op && json.d.streams.length > 0 && "screen" === json.d.streams[0].type && json.d.user_id === userMod.getCurrentUser().id) {
+						if (this._ws) this.resetVars();
+						this._ws = that;
+						this._onmessage = that.onmessage;
+						that.onmessage = this.wsOnMessage;
+					} else if (12 === json.op && 0 !== json.d.video_ssrc && 0 !== json.d.rtx_ssrc) {
+						console.log("%cRECEIVED SSRC INFORMATION", "color: aqua; font-size: xx-large;");
+						Logger.log("Video SSRC:");
+						Logger.log(json.d.video_ssrc);
+						Logger.log("RTX SSRC:");
+						Logger.log(json.d.rtx_ssrc);
+						this.videoSsrc = json.d.video_ssrc;
+						this.audioSsrc = json.d.audio_ssrc;
+						this.rtxSsrc = json.d.rtx_ssrc;
+						const res = json.d.streams[0].max_resolution;
+						this.resolution = {
+							width: res.width,
+							height: res.height,
+							is_fixed: "fixed" === res.type
+						};
+						this.frameRate = json.d.streams[0].max_framerate;
+					}
+					Logger.log(json);
+					console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
+				}));
+				Patcher.before(WebSocket.prototype, "close", ((that, [arg]) => {
+					Logger.log("CLOSE!");
+					Logger.log(that);
+					Logger.log(arg);
+					if (this._ws === that) {
+						console.log("%cSCREENSHARE CLOSED! Unlocking log...", "color: red; font-size: x-large;");
+						if (this._ws) this.resetVars();
+					}
+				}));
+				ContextMenu.getDiscordMenu("GoLiveModal").then((m => {
+					Patcher.after(m, "default", ((_, [arg], ret) => {
+						Logger.log(ret);
+						if (2 == ret.props.children.props.children[2].props.children[1].props.activeSlide && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) ret.props.children.props.children[2].props.children[2].props.children[0] = React.createElement("div", {
+							style: {
+								"margin-right": "8px"
+							}
+						}, React.createElement(Button, {
+							onClick: () => {},
+							size: Button.Sizes.SMALL
+						}, "Go Live with Sound"));
+					}));
+				}));
+				ContextMenu.getDiscordMenu("Confirm").then((m => {
+					Patcher.after(m, "default", ((_, [arg], ret) => {
+						if (!Array.isArray(ret.props.children)) return;
+						Logger.log(arg);
+						if (arg.selectedSource.sound) ret.props.children[1] = React.createElement("p", {
+							style: {
+								color: "green",
+								padding: "0px 16px"
+							}
+						}, "Tuxphones sound enabled!");
+						else ret.props.children[1] = React.createElement("p", {
+							style: {
+								color: "red",
+								padding: "0px 16px"
+							}
+						}, "Tuxphones not available.");
+					}));
+				}));
+				new Promise((resolve => {
+					const cancel = WebpackModules.addListener((module => {
+						if (!module.default || !module.DesktopSources) return;
+						resolve(module);
+						cancel();
+					}));
+				})).then((m => {
+					Patcher.after(m, "default", ((_, __, ret) => ret.then((vals => new Promise((res => {
+						Dispatcher.subscribe("TUX_APPS", (function dispatch(e) {
+							Dispatcher.unsubscribe("TUX_APPS", dispatch);
+							Logger.log(vals);
+							Logger.log(e.apps);
+							res(vals.map((v => {
+								let found = e.apps.find((el => el.xid == v.id.split(":")[1]));
+								if (v.id.startsWith("window") && found) v.sound = found;
+								else v.sound = null;
+								return v;
+							})));
+						}));
+						this.getInfo(vals.filter((v => v.id.startsWith("window"))).map((v => parseInt(v.id.split(":")[1]))));
+					}))))));
+				}));
+			}
+			resetVars() {
+				this.videoSsrc = null;
+				this.audioSsrc = null;
+				this.rtxSsrc = null;
+				this.resolution = null;
+				this.frameRate = null;
+				this.key = null;
+				this.ip = null;
+				this.port = null;
+				this._ws.onmessage = this._onmessage;
+				this._ws = null;
+				this._onmessage = null;
+			}
+			wsOnMessage(m) {
+				this._onmessage(m);
+				const json = JSON.parse(m.data);
+				console.log("%cWS RECV FRAME ================================", "color: orange; font-size: large; margin-top: 20px;");
+				if (4 === json.op) {
+					console.log("%cRECEIVED CODEC AND ENCRYPTION INFORMATION", "color: aqua; font-size: xx-large;");
+					Logger.log("Audio Codec:");
+					Logger.log(json.d.audio_codec);
+					Logger.log("Encryption Mode:");
+					Logger.log(json.d.mode);
+					Logger.log("Secret key:");
+					Logger.log(json.d.secret_key);
+					this.key = json.d.secret_key;
+				} else if (2 === json.op) {
+					console.log("%cRECEIVED IP AND PORT", "color: aqua; font-size: xx-large;");
+					this.ip = json.d.ip;
+					this.port = json.d.port;
+				}
+				Logger.log(json);
+				console.log("%cWS END RECV FRAME ============================", "color: orange; font-size: large; margin-bottom: 20px;");
 			}
 			parseData(data) {
 				let obj = JSON.parse(data);
 				Logger.log(obj);
 				switch (obj.type) {
 					case "ApplicationList":
-						const {
-							apps
-						} = obj;
+						Dispatcher.dirtyDispatch({
+							type: "TUX_APPS",
+							apps: obj.apps
+						});
 						break;
 					case "ConnectionId":
 						const {
@@ -327,7 +481,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
 			}
-			startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
+			startStream(ip, port, key, pid, xid, resolution, frameRate, video_ssrc, audio_ssrc, rtx_ssrc) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 					this.unixClient.write(JSON.stringify({
 						type: "StartStream",
@@ -335,12 +489,12 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						port,
 						key,
 						pid,
-						resolution: {
-							width,
-							height,
-							is_fixed
-						},
-						ssrc
+						xid,
+						resolution,
+						frame_rate: frameRate,
+						video_ssrc,
+						audio_ssrc,
+						rtx_ssrc
 					}));
 					this.unixClient.destroy();
 				}));
@@ -353,16 +507,27 @@ function buildPlugin([BasePlugin, PluginApi]) {
 					this.unixClient.destroy();
 				}));
 			}
-			getInfo() {
+			getInfo(xids) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 					this.unixClient.write(JSON.stringify({
-						type: "GetInfo"
+						type: "GetInfo",
+						xids
 					}));
 					this.unixClient.destroy();
+				}));
+				this.unixClient.on("error", (e => {
+					Logger.err(`[GetInfo] Socket client error: ${e}`);
+					Dispatcher.dirtyDispatch({
+						type: "TUX_APPS",
+						apps: []
+					});
 				}));
 			}
 			onStop() {
 				if (this.unixServer && this.unixServer.listening) this.unixServer.close();
+				if ((0, external_fs_namespaceObject.existsSync)(this.serverSockPath))(0, external_fs_namespaceObject.unlinkSync)(this.serverSockPath);
+				if (this._ws) this.resetVars();
+				Patcher.unpatchAll();
 			}
 		};
 		module.exports.LibraryPluginHack = __webpack_exports__;

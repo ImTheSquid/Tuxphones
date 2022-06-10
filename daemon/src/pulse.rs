@@ -1,6 +1,7 @@
 use std::{rc::Rc, cell::RefCell, ops::Deref};
 
 use libpulse_binding::{mainloop::threaded::Mainloop, context::{Context, State, FlagSet as ContextFlagSet}, callbacks::ListResult, operation::Operation};
+use crate::pid;
 
 pub struct PulseHandle {
     mainloop: Rc<RefCell<Mainloop>>,
@@ -23,9 +24,10 @@ pub struct BasicSinkInfo {
     module: Option<u32>
 }
 
+#[derive(Debug)]
 pub struct AudioApplication {
     pub name: String,
-    pub pid: usize,
+    pub pid: pid,
     pub index: u32,
     pub sink_index: u32
 }
@@ -34,9 +36,20 @@ pub struct AudioApplication {
 pub enum PulseInitializationError {
     NoAlloc,
     LoopStartErr(i32),
-    NoServerConnection,
     ContextConnectErr(i32),
     ContextStateErr
+}
+
+impl std::fmt::Display for PulseInitializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            PulseInitializationError::NoAlloc => "Unable to allocate".to_string(),
+            PulseInitializationError::LoopStartErr(code) => format!("Loop start error: {}", code),
+            PulseInitializationError::ContextConnectErr(code) => format!("Context connection error: {}", code),
+            PulseInitializationError::ContextStateErr => "Context state error".to_string(),
+        };
+        f.write_str(&str)
+    }
 }
 
 #[derive(Debug)]
@@ -45,11 +58,28 @@ pub enum PulseCaptureSetupError {
     NoDefaultSink
 }
 
+impl std::fmt::Display for PulseCaptureSetupError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PulseCaptureSetupError::NoPassthrough => "No passthrough sink found",
+            PulseCaptureSetupError::NoDefaultSink => "No default sink found",
+        })
+    }
+}
+
 #[derive(Debug)]
 pub enum PulseCaptureError {
     NotSetup,
-    FailedToMoveSinkInput,
     NoAppWithPid
+}
+
+impl std::fmt::Display for PulseCaptureError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            PulseCaptureError::NotSetup => "Capture not setup",
+            PulseCaptureError::NoAppWithPid => "No app with given PID found",
+        })
+    }
 }
 
 impl Drop for PulseHandle {
@@ -179,7 +209,7 @@ impl PulseHandle {
                 ListResult::Item(info) => {
                     if let Some(pid) = info.proplist.get_str("application.process.id") {
                         results_ref.borrow_mut().as_mut().unwrap().push(AudioApplication {
-                            name: format!("{}:{}", info.proplist.get_str("application.name").unwrap_or("NONAME".to_string()), info.proplist.get_str("media.name").unwrap_or("NOMEDIA".to_string())),
+                            name: info.proplist.get_str("application.name").unwrap_or("NONAME".to_string()),
                             pid: pid.parse().unwrap(),
                             index: info.index,
                             sink_index: info.sink,
@@ -202,6 +232,11 @@ impl PulseHandle {
 
     /// Adds sinks for audio capture
     pub fn setup_audio_capture(self: &mut Self, passthrough_override: Option<&str>) -> Result<(), PulseCaptureSetupError> {
+        // Don't do the same thing twice
+        if self.audio_is_setup {
+            return Ok(());
+        }
+
         let passthrough_sink = match passthrough_override {
             Some(s) => s.to_string(),
             None => {
@@ -292,6 +327,10 @@ impl PulseHandle {
 
     /// Removes audio capture sinks
     pub fn teardown_audio_capture(self: &mut Self) {
+        if !self.audio_is_setup {
+            return;
+        }
+
         self.audio_is_setup = false;
 
         self.mainloop.borrow_mut().lock();
@@ -322,7 +361,7 @@ impl PulseHandle {
     }
 
     /// Starts capturing audio from the application with the given Pulse PID
-    pub fn start_capture(self: &mut Self, pid: usize) -> Result<(), PulseCaptureError> {
+    pub fn start_capture(self: &mut Self, pid: pid) -> Result<(), PulseCaptureError> {
         if !self.audio_is_setup || self.combined_sink_module_index.is_none() {
             return Err(PulseCaptureError::NotSetup);
         }

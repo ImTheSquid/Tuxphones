@@ -1,0 +1,8 @@
+[Unit]
+Description=Tuxphones Daemon
+[Service]
+Type=simple
+StandardOutput=journal
+ExecStart=%h/.cargo/bin/tuxphones
+[Install]
+WantedBy=default.target

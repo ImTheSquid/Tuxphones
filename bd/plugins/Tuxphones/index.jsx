@@ -1,19 +1,46 @@
-import { createServer } from 'net';
-import { createConnection } from 'net';
+import { unlinkSync, existsSync } from 'fs';
+import { createServer, createConnection } from 'net';
 import { join } from 'path';
 
-const {Logger} = PluginApi;
+const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = PluginApi;
+const { Dispatcher } = DiscordModules;
+const React = BdApi.React;
+
+const userMod = BdApi.findModuleByProps("getCurrentUser");
+const Button = BdApi.findModuleByProps("BorderColors");
 
 export default class extends BasePlugin {
     onStart() {
         // Make sure HOME is defined, Discord refuses to read files from XDG_RUNTIME_DIR
         if (!process.env.HOME) {
-            BdApi.showToast('XDG_RUNTIME_DIR is not defined.', {type: 'error'});
-            return;
+            BdApi.showToast('$HOME is not defined. Reload Discord after defining.', {type: 'error'});
+            throw '$HOME is not defined.';
         }
 
         this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
+        if (!existsSync(this.sockPath)) {
+            BdApi.showConfirmationModal('Tuxphones Daemon Error', [
+                'The Tuxphones daemon was not detected.\n',
+                'If you don\'t know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:',
+                <a href='https://github.com/ImTheSquid/Tuxphones' target='_blank'>Tuxphones Github</a>,
+                ' \n', 
+                'If you\'re sure you already installed the daemon, make sure it\'s running then click "Reload Discord".'
+            ], {
+                danger: true,
+                confirmText: 'Reload Discord',
+                cancelText: 'Stop Tuxphones',
+                onConfirm: () => {
+                    location.reload();
+                }
+            })
+            throw 'Daemon not running!';
+        }
+
         this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
+
+        if (existsSync(this.serverSockPath)) {
+            unlinkSync(this.serverSockPath);
+        }
         
         this.unixServer = createServer(sock => {
             let data = [];
@@ -26,7 +53,174 @@ export default class extends BasePlugin {
 
         this.unixServer.listen(this.serverSockPath, () => Logger.log('Server bound'));
 
-        this.endStream();
+        // Hook WebSocket
+        this.wsOnMessage = this.wsOnMessage.bind(this);
+        this._onmessage = null;
+        this._ws = null;
+
+        Patcher.before(WebSocket.prototype, 'send', (that, [arg]) => {
+            // Lock log to just video stream
+            if (typeof(arg) !== 'string' || !that.url.includes('discord') || (this._ws && this._ws !== that)) return;
+
+            const json = JSON.parse(arg);
+
+            console.log('%cWS SEND FRAME ================================', 'color: green; font-size: large; margin-top: 20px;');
+
+            // Check if stream has started, if so then hook onmessage
+            if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === 'screen' && json.d.user_id === userMod.getCurrentUser().id) {
+                if (this._ws) {
+                    this.resetVars();
+                }
+                this._ws = that;
+                this._onmessage = that.onmessage;
+                that.onmessage = this.wsOnMessage;
+            } else if (json.op === 12 && json.d.video_ssrc !== 0 && json.d.rtx_ssrc !== 0) {
+                console.log('%cRECEIVED SSRC INFORMATION', 'color: aqua; font-size: xx-large;');
+                Logger.log('Video SSRC:');
+                Logger.log(json.d.video_ssrc);
+                Logger.log('RTX SSRC:');
+                Logger.log(json.d.rtx_ssrc);
+
+                this.videoSsrc = json.d.video_ssrc;
+                this.audioSsrc = json.d.audio_ssrc;
+                this.rtxSsrc = json.d.rtx_ssrc;
+                const res = json.d.streams[0].max_resolution;
+                this.resolution = {
+                    width: res.width,
+                    height: res.height,
+                    is_fixed: res.type === 'fixed'
+                };
+                this.frameRate = json.d.streams[0].max_framerate;
+            }
+
+            Logger.log(json);
+            console.log('%cWS END SEND FRAME ============================', 'color: green; font-size: large; margin-bottom: 20px;');
+        });
+
+        Patcher.before(WebSocket.prototype, 'close', (that, [arg]) => {
+            Logger.log('CLOSE!');
+            Logger.log(that);
+            Logger.log(arg);
+            if (this._ws === that) {
+                console.log('%cSCREENSHARE CLOSED! Unlocking log...', 'color: red; font-size: x-large;');
+                if (this._ws) {
+                   this.resetVars();
+                }
+            }
+        });
+
+        ContextMenu.getDiscordMenu('GoLiveModal').then(m => {
+            Patcher.after(m, 'default', (_, [arg], ret) => {
+                //Logger.log(arg)
+                Logger.log(ret)
+
+                if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2 && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+                    ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
+                        {React.createElement(Button, {
+                            onClick: () => {  },
+                            size: Button.Sizes.SMALL
+                        }, "Go Live with Sound")}
+                    </div>
+                }
+                
+                // ret.props.children.props.children[2].props.children[2].props.children[0] = <button style={{color: 'red'}}>GO LIVE</button>
+                /*ret.props.children.props.children[2].props.children[2].props.children.splice(1, 0, <div style={{'margin-right': '8px'}}>
+                    {React.createElement(Button, {
+                        onClick: () => { this.clearAppCache() },
+                        size: Button.Sizes.SMALL
+                    }, "Refresh Tuxphones")}
+                </div>);*/
+            });
+        });
+
+        ContextMenu.getDiscordMenu('Confirm').then(m => {
+            Patcher.after(m, 'default', (_, [arg], ret) => {
+                if (!Array.isArray(ret.props.children)) return;
+                Logger.log(arg)
+                //Logger.log(ret)
+    
+                if (arg.selectedSource.sound) {
+                    ret.props.children[1] = <p style={{color: 'green', padding: '0px 16px'}}>Tuxphones sound enabled!</p>
+                } else {
+                    ret.props.children[1] = <p style={{color: 'red', padding: '0px 16px'}}>Tuxphones not available.</p>
+                }
+            });
+        });
+
+        // Add extra info to desktop sources list
+        // Stolen from https://rauenzi.github.io/BDPluginLibrary/docs/ui_discordcontextmenu.js.html#line-269, removed code that limited to default
+        new Promise(resolve => {
+            const cancel = WebpackModules.addListener(module => {
+                if (!module.default || !module.DesktopSources) return;
+                resolve(module);
+                cancel();
+        })}).then(m => {
+            Patcher.after(m, 'default', (_, __, ret) => {    
+                return ret.then(vals => new Promise(res => {
+                    const f = function dispatch(e) {
+                        Dispatcher.unsubscribe('TUX_APPS', dispatch);
+
+                        // Check against window IDs to see if comaptible with sound
+                        Logger.log(vals);
+                        Logger.log(e.apps);
+                        res(vals.map(v => {
+                            let found = e.apps.find(el => el.xid == v.id.split(':')[1]);
+                            if (v.id.startsWith('window') && found) {
+                                v.sound = found;
+                            } else {
+                                v.sound = null;
+                            }
+                            return v;
+                        }));
+                    }
+    
+                    Dispatcher.subscribe('TUX_APPS', f);
+                    this.getInfo(vals.filter(v => v.id.startsWith('window')).map(v => parseInt(v.id.split(':')[1])));
+                }));
+            });
+        });
+    }
+
+    resetVars() {
+        this.videoSsrc = null;
+        this.audioSsrc = null;
+        this.rtxSsrc = null;
+        this.resolution = null;
+        this.frameRate = null;
+        this.key = null;
+        this.ip = null;
+        this.port = null;
+
+        this._ws.onmessage = this._onmessage;
+        this._ws = null;
+        this._onmessage = null;
+    }
+
+    wsOnMessage(m) {
+        this._onmessage(m);
+
+        const json = JSON.parse(m.data);
+
+        console.log('%cWS RECV FRAME ================================', 'color: orange; font-size: large; margin-top: 20px;');
+
+        if (json.op === 4) {
+            console.log('%cRECEIVED CODEC AND ENCRYPTION INFORMATION', 'color: aqua; font-size: xx-large;');
+            Logger.log('Audio Codec:');
+            Logger.log(json.d.audio_codec);
+            Logger.log('Encryption Mode:');
+            Logger.log(json.d.mode);
+            Logger.log('Secret key:');
+            Logger.log(json.d.secret_key);
+            this.key = json.d.secret_key;
+        } else if (json.op === 2) {
+            console.log("%cRECEIVED IP AND PORT", 'color: aqua; font-size: xx-large;')
+            this.ip = json.d.ip;
+            this.port = json.d.port;
+        }
+
+        Logger.log(json);
+
+        console.log('%cWS END RECV FRAME ============================', 'color: orange; font-size: large; margin-bottom: 20px;');
     }
 
     parseData(data) {
@@ -34,7 +228,10 @@ export default class extends BasePlugin {
         Logger.log(obj)
         switch (obj.type) {
             case 'ApplicationList':
-                const {apps} = obj;
+                Dispatcher.dirtyDispatch({
+                    type: 'TUX_APPS',
+                    apps: obj.apps
+                });
                 break;
             case 'ConnectionId':
                 const {id} = obj;
@@ -44,7 +241,7 @@ export default class extends BasePlugin {
         }
     }
 
-    startStream(ip, port, key, pid, width, height, is_fixed, ssrc) {
+    startStream(ip, port, key, pid, xid, resolution, frameRate, video_ssrc, audio_ssrc, rtx_ssrc) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
@@ -52,12 +249,12 @@ export default class extends BasePlugin {
                 port: port,
                 key: key,
                 pid: pid,
-                resolution: {
-                    width: width,
-                    height: height,
-                    is_fixed: is_fixed
-                },
-                ssrc: ssrc
+                xid: xid,
+                resolution: resolution,
+                frame_rate: frameRate,
+                video_ssrc: video_ssrc,
+                audio_ssrc: audio_ssrc,
+                rtx_ssrc: rtx_ssrc
             }));
             this.unixClient.destroy();
         });
@@ -72,12 +269,20 @@ export default class extends BasePlugin {
         });
     }
 
-    getInfo() {
+    getInfo(xids) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
-                type: 'GetInfo'
+                type: 'GetInfo',
+                xids: xids
             }));
             this.unixClient.destroy();
+        });
+        this.unixClient.on('error', e => {
+            Logger.err(`[GetInfo] Socket client error: ${e}`);
+            Dispatcher.dirtyDispatch({
+                type: 'TUX_APPS',
+                apps: []
+            });
         });
     }
 
@@ -85,5 +290,15 @@ export default class extends BasePlugin {
         if (this.unixServer && this.unixServer.listening) {
             this.unixServer.close();
         }
+
+        if (existsSync(this.serverSockPath)) {
+            unlinkSync(this.serverSockPath);
+        }
+
+        if (this._ws) {
+            this.resetVars();
+        }
+
+        Patcher.unpatchAll();
     }
 }
