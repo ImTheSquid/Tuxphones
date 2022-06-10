@@ -1,46 +1,36 @@
-use std::{thread, time::Duration};
-
-use tuxphones::pulse::PulseHandle;
-use tuxphones::gstreamer::{EncryptionAlgorithm, GstHandle, H264Settings, Resolution, VideoEncoderType};
+use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
+use tuxphones::{receive::SocketListener, CommandProcessor};
 
 fn main() {
-    // test_gst();
-    // test_pulse();
-}
+    let run = Arc::new(AtomicBool::new(true));
+    let r= Arc::clone(&run);
 
-fn test_gst() {
-    println!("Hello, world!");
-    let mut pipeline = GstHandle::new(
-        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 0, Some(Resolution{width: 1280, height: 720}), 30,
-        0, 0, 0,
-        "127.0.0.1:25555", EncryptionAlgorithm::aead_aes256_gcm, vec![2, 2, 2]
-    ).unwrap();
+    // Ctrl+C handling
+    match ctrlc::set_handler(move || {
+        println!("Interrupt!");
+        r.store(false, Ordering::SeqCst);
+    }) {
+        Ok(_) => {},
+        Err(e) => {
+            eprintln!("Failed to set interrupt handler! {}", e);
+            process::exit(1);
+        }
+    }
 
-}
+    let (sender, receiver) = mpsc::channel();
 
-fn test_pulse() {
-    println!("Hello, world!");
-    let mut handle = PulseHandle::new().expect("Failed!");
+    let mut socket_watcher = match SocketListener::new(sender.clone(), Arc::clone(&run), Duration::from_millis(500)) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("Error creating socket watcher!");
+            process::exit(2);
+        }
+    };
 
-    println!("Sinks ====");
-    let sinks = handle.get_sinks();
-    sinks.into_iter().for_each(|f| {
-        println!("{} (IDX: {})", f.name, f.index);
-    });
+    let mut command_processor = CommandProcessor::new(receiver, Arc::clone(&run), Duration::from_millis(500));
 
-    println!("Audio Applications ====");
-    let audio_apps = handle.get_audio_applications();
-    audio_apps.into_iter().for_each(|f | {
-        println!("{} (PID: {})", f.name, f.pid);
-    });
+    println!("Daemon started");
 
-    println!("Setup capture ====");
-    handle.setup_audio_capture(Some("alsa_output.pci-0000_0d_00.4.analog-stereo")).expect("Failed to setup capture!");
-
-    println!("Start capture ====");
-    handle.start_capture(6).expect("Failed to start capture!");
-    thread::sleep(Duration::from_secs(5));
-
-    println!("Stop capture ====");
-    handle.stop_capture();
+    socket_watcher.join();
+    command_processor.join();
 }
