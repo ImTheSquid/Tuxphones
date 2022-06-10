@@ -1,7 +1,7 @@
 use std::{thread, time::Duration};
 
 use tuxphones::pulse::PulseHandle;
-use tuxphones::gstreamer::{EncryptionAlgorithm, GstHandle, H264Settings, VideoEncoderType};
+use tuxphones::gstreamer::{EncryptionAlgorithm, GstHandle, H264Settings, Resolution, VideoEncoderType};
 
 fn main() {
     // test_gst();
@@ -11,7 +11,7 @@ fn main() {
 fn test_gst() {
     println!("Hello, world!");
     let mut pipeline = GstHandle::new(
-        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 0, 30, 345600,
+        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 0, Some(Resolution{width: 1920, height: 1080}), 345600,
         0, 0, 0,
         "127.0.0.1:25555", EncryptionAlgorithm::aead_aes256_gcm, vec![2, 2, 2]
     ).unwrap();

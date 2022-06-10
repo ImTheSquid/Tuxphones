@@ -20,12 +20,19 @@ pub struct H264Settings {
     pub nvidia_encoder: bool,
 }
 
+pub struct Resolution {
+    pub width: i32,
+    pub height: i32,
+}
+
 pub enum VideoEncoderType {
     H264(H264Settings),
     VP8,
     VP9,
 }
 
+//Allowing non camel case names for this struct to match the discord encryption algorithm names
+#[allow(non_camel_case_types)]
 pub enum EncryptionAlgorithm {
     aead_aes256_gcm
 }
@@ -89,11 +96,8 @@ impl Drop for GstHandle {
 }
 
 impl<'a> GstHandle {
-    /// Initialize a new stream
-    /// # Arguments
-    /// * `quality` - total pixel count, width x height (so 1080p is 1920x1080=2073600) (Not yet implemented)
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: u64, quality: u32, fps: i32,
+        encoder_to_use: VideoEncoderType, xid: u64, resolution: Option<Resolution>, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
@@ -108,12 +112,23 @@ impl<'a> GstHandle {
         //Create a new ximagesrc to get video from the X server
         let ximagesrc = gst::ElementFactory::make("ximagesrc", None)?;
 
+        //Creating a capsfilter to set the resolution and the fps
         let capsfilter = gst::ElementFactory::make("capsfilter", None)?;
+
+        let fps_frac = gst::Fraction::new(fps, 1);
+
+        //Create a vector containing the option of the gst caps
+        let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
+
+        //If the resolution is specified, add it to the caps
+        if let Some(resolution) = &resolution {
+            caps_options.push(("width", &resolution.width));
+            caps_options.push(("height", &resolution.height));
+        };
+
         capsfilter.set_property("caps", &gst::Caps::new_simple(
             "video/x-raw",
-            &[
-                ("framerate", &gst::Fraction::new(fps, 1)),
-            ],
+            caps_options.as_ref()
         ));
 
         ximagesrc.set_property_from_str("show-pointer", "1");
