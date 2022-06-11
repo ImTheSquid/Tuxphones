@@ -35,12 +35,6 @@ pub mod receive {
     pub enum SocketListenerCommand {
         /// Starts a new soundshare stream
         StartStream { 
-            /// IP Address
-            ip: String, 
-            /// Port
-            port: u16,
-            /// Encryption key 
-            key: Vec<u8>, 
             /// Pulse PID
             pid: pid, 
             /// XID
@@ -48,13 +42,17 @@ pub mod receive {
             /// Target resolution
             resolution: StreamResolutionInformation, 
             /// Target framerate
-            frame_rate: u8, 
-            /// Video SSRC
-            video_ssrc: u32,
-            /// Audio SSRC 
-            audio_ssrc: u32,
-            /// RTX SSRC
-            rtx_ssrc: u32
+            framerate: u8, 
+            /// Server ID
+            server_id: String,
+            /// User ID
+            user_id: String,
+            /// Voice access token
+            token: String,
+            /// Session ID
+            session_id: String,
+            /// Target endpoint
+            endpoint: String
         },
         /// Stops the currently-running stream
         StopStream,
@@ -161,12 +159,6 @@ pub mod send {
         pub xid: xid
     }
 
-    #[derive(Serialize)]
-    #[serde(tag = "type")]
-    struct ConnectionId<'a> {
-        id: &'a str
-    }
-
     pub enum SocketError {
         ConnectionFailed,
         NoRuntimeDir,
@@ -230,12 +222,6 @@ pub mod send {
 
     pub fn application_info(apps: &Vec<Application>) -> Result<(), SocketError> {
         write_socket(&ApplicationList { apps })?;
-
-        Ok(())
-    }
-
-    pub fn connection_id(id: &str) -> Result<(), SocketError> {
-        write_socket(&ConnectionId { id })?;
 
         Ok(())
     }

@@ -6,7 +6,9 @@ const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = PluginApi
 const { Dispatcher } = DiscordModules;
 const React = BdApi.React;
 
-const userMod = BdApi.findModuleByProps("getCurrentUser");
+// Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
+const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
+const WebSocketControl = BdApi.findModule(m => m.default.prototype.streamCreate).default;
 const Button = BdApi.findModuleByProps("BorderColors");
 
 export default class extends BasePlugin {
@@ -53,83 +55,61 @@ export default class extends BasePlugin {
 
         this.unixServer.listen(this.serverSockPath, () => Logger.log('Server bound'));
 
-        // Hook WebSocket
-        this.wsOnMessage = this.wsOnMessage.bind(this);
-        this._onmessage = null;
-        this._ws = null;
-
-        Patcher.before(WebSocket.prototype, 'send', (that, [arg]) => {
-            // Lock log to just video stream
-            if (typeof(arg) !== 'string' || !that.url.includes('discord') || (this._ws && this._ws !== that)) return;
-
-            const json = JSON.parse(arg);
-
-            console.log('%cWS SEND FRAME ================================', 'color: green; font-size: large; margin-top: 20px;');
-
-            // Check if stream has started, if so then hook onmessage
-            if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === 'screen' && json.d.user_id === userMod.getCurrentUser().id) {
-                if (this._ws) {
-                    this.resetVars();
+        // Hook Dispatcher for when to intercept
+        this.interceptNextStreamServerUpdate = false;
+        this.currentSoundProfile = null;
+        this.selectedFPS = null;
+        this.selectedResoultion = null;
+        this.serverId = null;
+        Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
+            if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
+                let res = null;
+                switch (this.selectedResoultion) {
+                    case 720: res = {
+                        width: 1280,
+                        height: 720,
+                        is_fixed: true
+                    };
+                    break;
+                    case 1080: res = {
+                        width: 1920,
+                        height: 1080,
+                        is_fixed: true
+                    };
+                    break;
+                    default: res = {
+                        width: 0,
+                        height: 0,
+                        is_fixed: false
+                    };
+                    break;
                 }
-                this._ws = that;
-                this._onmessage = that.onmessage;
-                that.onmessage = this.wsOnMessage;
-            } else if (json.op === 12 && json.d.video_ssrc !== 0 && json.d.rtx_ssrc !== 0) {
-                console.log('%cRECEIVED SSRC INFORMATION', 'color: aqua; font-size: xx-large;');
-                Logger.log('Video SSRC:');
-                Logger.log(json.d.video_ssrc);
-                Logger.log('RTX SSRC:');
-                Logger.log(json.d.rtx_ssrc);
-
-                this.videoSsrc = json.d.video_ssrc;
-                this.audioSsrc = json.d.audio_ssrc;
-                this.rtxSsrc = json.d.rtx_ssrc;
-                const res = json.d.streams[0].max_resolution;
-                this.resolution = {
-                    width: res.width,
-                    height: res.height,
-                    is_fixed: res.type === 'fixed'
-                };
-                this.frameRate = json.d.streams[0].max_framerate;
+                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
+                return;
             }
-
-            Logger.log(json);
-            console.log('%cWS END SEND FRAME ============================', 'color: green; font-size: large; margin-bottom: 20px;');
-        });
-
-        Patcher.before(WebSocket.prototype, 'close', (that, [arg]) => {
-            Logger.log('CLOSE!');
-            Logger.log(that);
-            Logger.log(arg);
-            if (this._ws === that) {
-                console.log('%cSCREENSHARE CLOSED! Unlocking log...', 'color: red; font-size: x-large;');
-                if (this._ws) {
-                   this.resetVars();
-                }
-            }
+            original(arg);
         });
 
         ContextMenu.getDiscordMenu('GoLiveModal').then(m => {
-            Patcher.after(m, 'default', (_, [arg], ret) => {
+            Patcher.after(m, 'default', (_, __, ret) => {
                 //Logger.log(arg)
                 Logger.log(ret)
 
                 if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2 && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
                     ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
                         {React.createElement(Button, {
-                            onClick: () => {  },
+                            onClick: () => {
+                                const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
+                                this.currentSoundProfile = streamInfo.selectedSource.sound;
+                                this.selectedFPS = streamInfo.selectedFPS;
+                                this.selectedResoultion = streamInfo.selectedResoultion;
+                                this.serverId = streamInfo.guildId;
+                                this.createStream(streamInfo.guildId, streamInfo.selectedChannelId);
+                            },
                             size: Button.Sizes.SMALL
                         }, "Go Live with Sound")}
                     </div>
                 }
-                
-                // ret.props.children.props.children[2].props.children[2].props.children[0] = <button style={{color: 'red'}}>GO LIVE</button>
-                /*ret.props.children.props.children[2].props.children[2].props.children.splice(1, 0, <div style={{'margin-right': '8px'}}>
-                    {React.createElement(Button, {
-                        onClick: () => { this.clearAppCache() },
-                        size: Button.Sizes.SMALL
-                    }, "Refresh Tuxphones")}
-                </div>);*/
             });
         });
 
@@ -181,46 +161,14 @@ export default class extends BasePlugin {
         });
     }
 
-    resetVars() {
-        this.videoSsrc = null;
-        this.audioSsrc = null;
-        this.rtxSsrc = null;
-        this.resolution = null;
-        this.frameRate = null;
-        this.key = null;
-        this.ip = null;
-        this.port = null;
-
-        this._ws.onmessage = this._onmessage;
-        this._ws = null;
-        this._onmessage = null;
-    }
-
-    wsOnMessage(m) {
-        this._onmessage(m);
-
-        const json = JSON.parse(m.data);
-
-        console.log('%cWS RECV FRAME ================================', 'color: orange; font-size: large; margin-top: 20px;');
-
-        if (json.op === 4) {
-            console.log('%cRECEIVED CODEC AND ENCRYPTION INFORMATION', 'color: aqua; font-size: xx-large;');
-            Logger.log('Audio Codec:');
-            Logger.log(json.d.audio_codec);
-            Logger.log('Encryption Mode:');
-            Logger.log(json.d.mode);
-            Logger.log('Secret key:');
-            Logger.log(json.d.secret_key);
-            this.key = json.d.secret_key;
-        } else if (json.op === 2) {
-            console.log("%cRECEIVED IP AND PORT", 'color: aqua; font-size: xx-large;')
-            this.ip = json.d.ip;
-            this.port = json.d.port;
-        }
-
-        Logger.log(json);
-
-        console.log('%cWS END RECV FRAME ============================', 'color: orange; font-size: large; margin-bottom: 20px;');
+    createStream(guild_id, channel_id) {
+        this.interceptNextStreamServerUpdate = true;
+        WebSocketControl.streamCreate(
+            guild_id === null ? 'call' : 'guild', // type
+            guild_id, // guild_id
+            channel_id, // channel or DM id
+            null, // preferred_region
+        );
     }
 
     parseData(data) {
@@ -233,28 +181,24 @@ export default class extends BasePlugin {
                     apps: obj.apps
                 });
                 break;
-            case 'ConnectionId':
-                const {id} = obj;
-                break;
             default:
                 Logger.err(`Received unknown command type: ${obj.type}`);
         }
     }
 
-    startStream(ip, port, key, pid, xid, resolution, frameRate, video_ssrc, audio_ssrc, rtx_ssrc) {
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
-                ip: ip,
-                port: port,
-                key: key,
                 pid: pid,
                 xid: xid,
                 resolution: resolution,
-                frame_rate: frameRate,
-                video_ssrc: video_ssrc,
-                audio_ssrc: audio_ssrc,
-                rtx_ssrc: rtx_ssrc
+                framerate: framerate,
+                server_id: server_id,
+                user_id: AuthenticationStore.getId(),
+                token: token,
+                session_id: AuthenticationStore.getSessionId(),
+                endpoint: endpoint
             }));
             this.unixClient.destroy();
         });
@@ -293,10 +237,6 @@ export default class extends BasePlugin {
 
         if (existsSync(this.serverSockPath)) {
             unlinkSync(this.serverSockPath);
-        }
-
-        if (this._ws) {
-            this.resetVars();
         }
 
         Patcher.unpatchAll();

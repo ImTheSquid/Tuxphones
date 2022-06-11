@@ -57,16 +57,15 @@ impl CommandProcessor {
                         let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                         match cmd {
                             SocketListenerCommand::StartStream { 
-                                ip, 
-                                port, 
-                                key, 
-                                pid, 
-                                xid, 
-                                resolution, 
-                                frame_rate, 
-                                video_ssrc, 
-                                audio_ssrc,
-                                rtx_ssrc
+                                pid,
+                                xid,
+                                resolution,
+                                framerate,
+                                server_id,
+                                user_id,
+                                token,
+                                session_id,
+                                endpoint
                             } => {
                                 println!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
@@ -91,7 +90,8 @@ impl CommandProcessor {
                                     nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
                                 }
 
-                                gstreamer = match GstHandle::new(
+                                todo!("Implement GStreamer with new params");
+                                /*gstreamer = match GstHandle::new(
                                     VideoEncoderType::H264(H264Settings { nvidia_encoder }),
                                     xid.into(),
                                     resolution,
@@ -117,7 +117,7 @@ impl CommandProcessor {
                                         eprintln!("GStreamer startup error: {}", e);
                                         continue;
                                     }
-                                }
+                                }*/
 
                                 println!("[StartStream:{}] Command processed (stream started)", start_time);
                             },
