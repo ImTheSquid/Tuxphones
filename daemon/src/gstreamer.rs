@@ -76,8 +76,6 @@ pub struct GstHandle {
     pipeline: gst::Pipeline,
     webrtcbin: Element,
     encoder: Element,
-    ximagesrc: Element,
-    pulsesrc: Element
 }
 
 //Custom drop logic to deinit gstreamer when all handles are dropped
@@ -104,7 +102,7 @@ impl Drop for GstHandle {
     }
 }
 
-impl<'a> GstHandle {
+impl GstHandle {
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: u64, resolution: StreamResolutionInformation, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
@@ -253,17 +251,7 @@ impl<'a> GstHandle {
             pipeline,
             webrtcbin,
             encoder,
-            ximagesrc,
-            pulsesrc,
         })
-    }
-
-    pub fn change_audio_source(&self, audio_device: &str) {
-        self.pulsesrc.set_property_from_str("device", audio_device);
-    }
-
-    pub fn change_video_source(&self, xid: u64) {
-        self.ximagesrc.set_property("xid", xid);
     }
 
     pub fn start(&self) -> Result<StateChangeSuccess, StateChangeError> {
