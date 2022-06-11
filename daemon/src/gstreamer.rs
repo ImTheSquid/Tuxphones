@@ -268,8 +268,4 @@ impl<'a> GstHandle {
     pub fn start(&self) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)
     }
-
-    pub fn stop(&self) {
-        todo!()
-    }
 }

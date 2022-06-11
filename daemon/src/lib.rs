@@ -124,10 +124,8 @@ impl CommandProcessor {
                             SocketListenerCommand::StopStream => {
                                 println!("[StopStream:{}] Command received", start_time);
 
-                                // TODO: GStreamer shutdown
-                                if let Some(gstreamer) = gstreamer.as_ref() {
-                                    gstreamer.stop();
-                                }
+                                // Kill gstreamer instance
+                                gstreamer.take();
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
