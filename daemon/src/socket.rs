@@ -1,6 +1,7 @@
 pub mod receive {
     use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
+    use tracing::{error, info};
     use crate::{pid, xid};
 
     /// Listens on a socket for commands
@@ -76,7 +77,7 @@ pub mod receive {
             let listener = match UnixListener::bind(&path) {
                 Ok(sock) => sock,
                 Err(e) => {
-                    eprintln!("Failed to create listener: {}", e);
+                    error!("Failed to create listener: {}", e);
                     return Err(SocketListenerCreationError::UnableToCreateSocket)
                 }
             };
@@ -84,7 +85,7 @@ pub mod receive {
             // Allows for constant event processing
             match listener.set_nonblocking(true) {
                 Err(e) => {
-                    eprintln!("Failed to set listener to non-blocking: {}", e);
+                    error!("Failed to set listener to non-blocking: {}", e);
                     return Err(SocketListenerCreationError::UnableToSetNonBlocking);
                 }
                 Ok(()) => {}
@@ -99,7 +100,7 @@ pub mod receive {
                             match stream.read_to_string(&mut buf) {
                                 Ok(_) => {}
                                 Err(e) => {
-                                    eprintln!("Failed to read socket stream: {}", e);
+                                    error!("Failed to read socket stream: {}", e);
                                     continue;
                                 }
                             }
@@ -107,22 +108,22 @@ pub mod receive {
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
                                 Ok(cmd) => match sender.send(cmd) {
                                     Ok(_) => {},
-                                    Err(e) => eprintln!("Failed to send command: {}", e)
+                                    Err(e) => error!("Failed to send command: {}", e)
                                 },
-                                Err(e) => eprintln!("Failed to deserialize command: {}", e),
+                                Err(e) => error!("Failed to deserialize command: {}", e),
                             }
                         },
                         Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                             if !run.load(Ordering::SeqCst) {
                                 match fs::remove_file(&path) {
-                                    Ok(()) => println!("Cleaned up socket"),
-                                    Err(e) => eprintln!("Failed to remove socket: {}", e)
+                                    Ok(()) => info!("Cleaned up socket"),
+                                    Err(e) => error!("Failed to remove socket: {}", e)
                                 }
                                 break;
                             }
                             thread::sleep(sleep_time);
                         }
-                        Err(e) => eprintln!("Failed to get stream: {}", e)
+                        Err(e) => error!("Failed to get stream: {}", e)
                     }
                 }
             });
@@ -144,6 +145,7 @@ pub mod send {
     use crate::{pid, xid};
 
     use serde::Serialize;
+    use tracing::error;
 
     #[derive(Serialize)]
     #[serde(tag = "type")]
@@ -195,7 +197,7 @@ pub mod send {
         match UnixStream::connect(&path) {
             Ok(s) => Ok(s),
             Err(e) => {
-                eprintln!("Socket connection error: {}", e);
+                error!("Socket connection error: {}", e);
                 Err(SocketError::ConnectionFailed)
             },
         }
@@ -209,12 +211,12 @@ pub mod send {
             Ok(s) => match socket.write(s.as_bytes()) {
                 Ok(_) => Ok(()),
                 Err(e) => {
-                    eprintln!("Write failed: {}", e);
+                    error!("Write failed: {}", e);
                     return Err(SocketError::WriteFailed);
                 },
             },
             Err(e) => {
-                eprintln!("Serialization failed: {}", e);
+                error!("Serialization failed: {}", e);
                 return Err(SocketError::SerializationFailed);
             },
         }

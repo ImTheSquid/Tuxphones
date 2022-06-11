@@ -5,6 +5,7 @@ use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
+use tracing::error;
 
 use crate::receive::StreamResolutionInformation;
 
@@ -86,7 +87,7 @@ impl Drop for GstHandle {
 
         match self.pipeline.set_state(gst::State::Null) {
             Err(e) => {
-                println!("Failed to stop pipeline: {:?}", e);
+                error!("Failed to stop pipeline: {:?}", e);
             }
             _ => {}
         };

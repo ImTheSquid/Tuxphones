@@ -4,6 +4,7 @@ use gstreamer::GstHandle;
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
 use sysinfo::{SystemExt, ProcessExt, Process, Pid, PidExt};
+use tracing::{error, info};
 use x::XServerHandle;
 
 // Makes sure typing is preserved
@@ -29,7 +30,7 @@ impl CommandProcessor {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
                 Err(e) => {
-                    eprintln!("Pulse error: {}", e);
+                    error!("Pulse error: {}", e);
                     run.store(false, Ordering::SeqCst);
                     return;
                 }
@@ -38,7 +39,7 @@ impl CommandProcessor {
             let x = match XServerHandle::new() {
                 Ok(handle) => handle,
                 Err(e) => {
-                    eprintln!("X Server error: {}", e);
+                    error!("X Server error: {}", e);
                     run.store(false, Ordering::SeqCst);
                     return;
                 }
@@ -48,7 +49,7 @@ impl CommandProcessor {
 
             loop {
                 if !run.load(Ordering::SeqCst) {
-                    println!("Command processor shut down");
+                    info!("Command processor shut down");
                     break;
                 }
 
@@ -67,11 +68,11 @@ impl CommandProcessor {
                                 session_id,
                                 endpoint
                             } => {
-                                println!("[StartStream:{}] Command received", start_time);
+                                info!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
                                     Err(e) => {
-                                        eprintln!("Failed to setup pulse capture: {}", e);
+                                        error!("Failed to setup pulse capture: {}", e);
                                         continue;
                                     }
                                 }
@@ -79,7 +80,7 @@ impl CommandProcessor {
                                 match pulse.start_capture(pid) {
                                     Ok(_) => {},
                                     Err(e) => {
-                                        eprintln!("Failed to start pulse capture: {}", e);
+                                        error!("Failed to start pulse capture: {}", e);
                                         continue;
                                     }
                                 }
@@ -105,7 +106,7 @@ impl CommandProcessor {
                                 ) {
                                     Ok(handle) => Some(handle),
                                     Err(e) => {
-                                        eprintln!("GStreamer error: {}", e);
+                                        error!("GStreamer error: {}", e);
                                         run.store(false, Ordering::SeqCst);
                                         continue;
                                     },
@@ -114,15 +115,15 @@ impl CommandProcessor {
                                 match gstreamer.as_ref().unwrap().start() {
                                     Ok(_) => {},
                                     Err(e) => {
-                                        eprintln!("GStreamer startup error: {}", e);
+                                        error!("GStreamer startup error: {}", e);
                                         continue;
                                     }
                                 }*/
 
-                                println!("[StartStream:{}] Command processed (stream started)", start_time);
+                                info!("[StartStream:{}] Command processed (stream started)", start_time);
                             },
                             SocketListenerCommand::StopStream => {
-                                println!("[StopStream:{}] Command received", start_time);
+                                info!("[StopStream:{}] Command received", start_time);
 
                                 // Kill gstreamer instance
                                 gstreamer.take();
@@ -130,10 +131,10 @@ impl CommandProcessor {
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
 
-                                println!("[StopStream:{}] Command processed (stream stopped)", start_time);
+                                info!("[StopStream:{}] Command processed (stream stopped)", start_time);
                             },
                             SocketListenerCommand::GetInfo { xids } => {
-                                println!("[GetInfo:{}] Command received", start_time);
+                                info!("[GetInfo:{}] Command received", start_time);
 
                                 // Find all PIDs of given XIDs
                                 let xid_pid: Vec<(xid, pid)> = xids
@@ -190,15 +191,15 @@ impl CommandProcessor {
                                 }
 
                                 match socket::send::application_info(&found_applications) {
-                                    Ok(_) => println!("[GetInfo:{}] Command processed (applications found: {})", start_time, found_applications.len()),
-                                    Err(e) => eprintln!("Failed to send application data: {}", e)
+                                    Ok(_) => info!("[GetInfo:{}] Command processed (applications found: {})", start_time, found_applications.len()),
+                                    Err(e) => error!("Failed to send application data: {}", e)
                                 }
                             }
                         }
                     },
                     Err(e) => match e {
                         mpsc::TryRecvError::Disconnected => {
-                            eprintln!("Failed to watch for receiver: {}", e);
+                            error!("Failed to watch for receiver: {}", e);
                             run.store(false, Ordering::SeqCst);
                             break;
                         },
