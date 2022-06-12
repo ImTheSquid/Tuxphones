@@ -24,9 +24,8 @@ pub mod api {
 
     pub async fn get_ws_endpoint() -> Result<GetWsEndpointResponse, ApiError> {
         let body = reqwest::get("https://discord.com/api/gateway").await?.text().await?;
-        let deserialized: GetWsEndpointResponse = serde_json::from_str(&body)?;
 
-        Ok(deserialized)
+        Ok(serde_json::from_str(&body)?)
     }
 }
 
@@ -59,11 +58,18 @@ pub mod websocket {
         OpCode1(OpCode1),
         /// Incoming message containing configuration options for webrtc connection
         OpCode2(OpCode2),
+        /// Outgoind heartbeat message
+        OpCode3(OpCode3_6),
+        /// Incoming heartbeat message
+        OpCode6(OpCode3_6),
         /// Initial heartbeat incoming configuration message
         OpCode8(OpCode8),
         /// Outgoing message containing info about the stream
         OpCode12(OpCode12),
+        /// Unknown outgoing message
+        OpCode15(OpCode15),
     }
+
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct GatewayResolution {
@@ -98,6 +104,12 @@ pub mod websocket {
         pub max_resolution: Option<GatewayResolution>,
     }
 
+    ///  Unknown outgoing message
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode15 {
+        any: u8,
+    }
+
     /// Outgoing message containing info about the stream
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode0 {
@@ -122,6 +134,13 @@ pub mod websocket {
         modes: Vec<String>,
         ssrc: u32,
         streams: Vec<GatewayStream>,
+    }
+
+    /// Heartbeat message
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode3_6 {
+        /// Random nonce
+        d: u64,
     }
 
     /// Initial heartbeat incoming configuration message
