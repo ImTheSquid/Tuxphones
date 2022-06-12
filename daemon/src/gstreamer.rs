@@ -42,6 +42,7 @@ pub enum VideoEncoderType {
 
 //Allowing non camel case names for this struct to match the discord encryption algorithm names
 #[allow(non_camel_case_types)]
+#[derive(Debug, serde::Deserialize, serde::Serialize)]
 pub enum EncryptionAlgorithm {
     aead_aes256_gcm
 }

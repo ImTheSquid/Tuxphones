@@ -39,6 +39,7 @@ pub mod websocket {
     use tracing::{debug, info, trace};
 
     use crate::discord::api::{ApiError, get_ws_endpoint};
+    use crate::EncryptionAlgorithm;
 
     const API_VERSION: u8 = 7;
 
@@ -53,6 +54,7 @@ pub mod websocket {
     #[serde(untagged)]
     pub enum WebsocketMessageD {
         OpCode0(OpCode0),
+        OpCode1(OpCode1),
         OpCode2(OpCode2),
         OpCode8(OpCode8),
         OpCode12(OpCode12)
@@ -132,6 +134,50 @@ pub mod websocket {
         rtx_ssrc: u32,
         video_ssrc: u32,
         streams: Vec<GatewayStream>,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub enum PayloadType {
+        #[serde(rename = "audio")]
+        Audio,
+        #[serde(rename = "video")]
+        Video
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct GatewayCodec {
+        pub name: String,
+        #[serde(rename = "type")]
+        pub codec_type: PayloadType,
+        pub priority: u16,
+        pub payload_type: u8,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode1Data {
+        /// My public ip address obtainable with an UDP IP discovery message
+        pub address: String,
+        /// Encryption algorithm to use
+        pub mode: EncryptionAlgorithm,
+        /// My public port obtainable with an UDP IP discovery message
+        port: u16,
+    }
+
+    /// Outgoing message containing info about the stream
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode1 {
+        /// My public ip address obtainable with an UDP IP discovery message
+        address: String,
+        /// My public port obtainable with an UDP IP discovery message
+        port: u16,
+        experiments: Vec<String>,
+        /// Encryption algorithm to use
+        mode: EncryptionAlgorithm,
+        protocol: String,
+        rtc_connection_id: String,
+        codecs: Vec<GatewayCodec>,
+        data: OpCode1Data,
+
     }
 
 
