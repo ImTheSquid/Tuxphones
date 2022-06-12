@@ -1,4 +1,4 @@
-pub mod api{
+pub mod api {
     #[derive(serde::Deserialize)]
     pub struct GetWsEndpointResponse {
         pub url: String,
@@ -30,12 +30,15 @@ pub mod api{
     }
 }
 
-pub mod websocket{
+pub mod websocket {
+    use futures_util::SinkExt;
+    use futures_util::stream::{SplitSink, StreamExt};
     use tokio::net::TcpStream;
     use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-    use tracing::{debug, info};
-    use tracing::field::debug;
-    use crate::discord::api::{get_ws_endpoint, ApiError};
+    use tokio_tungstenite::tungstenite::Message;
+    use tracing::{debug, info, trace};
+
+    use crate::discord::api::{ApiError, get_ws_endpoint};
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct WebsocketMessage {
@@ -86,8 +89,9 @@ pub mod websocket{
         }
     }
 
+    #[derive(Debug)]
     pub struct WebsocketConnection {
-        ws_stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+        ws_send_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>,
     }
 
     impl WebsocketConnection {
@@ -99,19 +103,42 @@ pub mod websocket{
 
             let (ws_stream, response) = connect_async(endpoint).await?;
 
+            let (write, read) = ws_stream.split();
+
             debug!("Connected with response code: {:?}", response.status());
 
             Ok(Self {
-                ws_stream
+                ws_send_stream: write,
             })
         }
 
         /// auth the websocket connection using opcode 0
         /// https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87
         #[tracing::instrument]
-        pub async fn auth(server_id: &str, session_id: &str, token: &str, user_id: &str) {
+        pub async fn auth(&mut self, server_id: String, session_id: String, token: String, user_id: String) -> Result<(), tokio_tungstenite::tungstenite::Error> {
+            let ws_message = WebsocketMessage {
+                op: 0,
+                d: WebsocketMessageD::OpCode0(OpCode0 {
+                    server_id,
+                    session_id,
+                    streams: vec![OpCode0stream {
+                        stream_type: "video".to_string(),
+                        rid: 100,
+                        quantity: 100,
+                    }],
+                    token,
+                    user_id,
+                    video: true,
+                }),
+            };
 
-            "".to_string();
+            let ws_message_string = serde_json::to_string(&ws_message).unwrap();
+
+            trace!("Sending auth message: {}", ws_message_string);
+
+            self.ws_send_stream.send(Message::Text(ws_message_string)).await?;
+
+            Ok(())
         }
     }
 }
