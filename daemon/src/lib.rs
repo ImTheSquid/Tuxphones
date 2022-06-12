@@ -16,6 +16,7 @@ mod gstreamer;
 mod socket;
 mod x;
 mod discord;
+mod discord_op;
 
 pub use socket::receive;
 
