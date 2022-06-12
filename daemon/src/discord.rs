@@ -104,12 +104,6 @@ pub mod websocket {
         pub max_resolution: Option<GatewayResolution>,
     }
 
-    ///  Unknown outgoing message
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode15 {
-        any: u8,
-    }
-
     /// Outgoing message containing info about the stream
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode0 {
@@ -120,45 +114,6 @@ pub mod websocket {
         pub token: String,
         pub user_id: String,
         pub video: bool,
-    }
-
-    /// Incoming message containing configuration options for webrtc connection
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode2 {
-        experiment: Vec<String>,
-        /// Discord ip address to stream to
-        ip: String,
-        /// Discord port to stream to
-        port: u16,
-        /// Supported encrpytion modes by the server
-        modes: Vec<String>,
-        ssrc: u32,
-        streams: Vec<GatewayStream>,
-    }
-
-    /// Heartbeat message
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode3_6 {
-        /// Random nonce
-        d: u64,
-    }
-
-    /// Initial heartbeat incoming configuration message
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode8 {
-        /// the interval (in milliseconds) the client should heartbeat with
-        heartbeat_interval: u32,
-        /// api version
-        v: u8,
-    }
-
-    /// Outgoing message containing info about the stream
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode12 {
-        audio_ssrc: u32,
-        rtx_ssrc: u32,
-        video_ssrc: u32,
-        streams: Vec<GatewayStream>,
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -202,6 +157,51 @@ pub mod websocket {
         rtc_connection_id: String,
         codecs: Vec<GatewayCodec>,
         data: OpCode1Data,
+    }
+
+    /// Incoming message containing configuration options for webrtc connection
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode2 {
+        experiment: Vec<String>,
+        /// Discord ip address to stream to
+        ip: String,
+        /// Discord port to stream to
+        port: u16,
+        /// Supported encrpytion modes by the server
+        modes: Vec<String>,
+        ssrc: u32,
+        streams: Vec<GatewayStream>,
+    }
+
+    /// Heartbeat message
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode3_6 {
+        /// Random nonce
+        d: u64,
+    }
+
+    /// Initial heartbeat incoming configuration message
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode8 {
+        /// the interval (in milliseconds) the client should heartbeat with
+        heartbeat_interval: u32,
+        /// api version
+        v: u8,
+    }
+
+    /// Outgoing message containing info about the stream
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode12 {
+        audio_ssrc: u32,
+        rtx_ssrc: u32,
+        video_ssrc: u32,
+        streams: Vec<GatewayStream>,
+    }
+
+    ///  Unknown outgoing message
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode15 {
+        any: u8,
     }
 
 
