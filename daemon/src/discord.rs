@@ -55,23 +55,40 @@ pub mod websocket {
         OpCode0(OpCode0),
         OpCode2(OpCode2),
         OpCode8(OpCode8),
+        OpCode12(OpCode12)
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct  GatewayResolution {
+        #[serde(rename = "type")]
+        resolution_type: String,
+        width: u16,
+        height: u16,
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct GatewayStream {
-        //Opcode 0 and 2 params
+        //Opcode 0 and 2 and 12 params
         #[serde(rename = "type")]
         pub stream_type: String,
         pub rid: u8,
         pub quality: u8,
 
-        //Only opcode 2 params
+        //Opcode 2 and 12 params
         #[serde(skip_serializing_if = "Option::is_none")]
         pub active: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub ssrc: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
-        pub rtx_ssrc: Option<u32>
+        pub rtx_ssrc: Option<u32>,
+
+        //Opcode 12 params
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_bitrate: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_framerate: Option<u8>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_resolution: Option<GatewayResolution>,
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -106,6 +123,15 @@ pub mod websocket {
         heartbeat_interval: u32,
         /// api version
         v: u8,
+    }
+
+    /// Outgoing message containing info about the stream
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub struct OpCode12 {
+        audio_ssrc: u32,
+        rtx_ssrc: u32,
+        video_ssrc: u32,
+        streams: Vec<GatewayStream>,
     }
 
 
@@ -167,7 +193,10 @@ pub mod websocket {
 
                         active: None,
                         ssrc: None,
-                        rtx_ssrc: None
+                        rtx_ssrc: None,
+                        max_bitrate: None,
+                        max_framerate: None,
+                        max_resolution: None
                     }],
                     token,
                     user_id,
