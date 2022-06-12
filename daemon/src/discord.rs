@@ -62,11 +62,11 @@ pub mod websocket {
         /// Initial heartbeat incoming configuration message
         OpCode8(OpCode8),
         /// Outgoing message containing info about the stream
-        OpCode12(OpCode12)
+        OpCode12(OpCode12),
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct  GatewayResolution {
+    pub struct GatewayResolution {
         #[serde(rename = "type")]
         resolution_type: String,
         width: u16,
@@ -147,7 +147,7 @@ pub mod websocket {
         #[serde(rename = "audio")]
         Audio,
         #[serde(rename = "video")]
-        Video
+        Video,
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -247,7 +247,7 @@ pub mod websocket {
                         rtx_ssrc: None,
                         max_bitrate: None,
                         max_framerate: None,
-                        max_resolution: None
+                        max_resolution: None,
                     }],
                     token,
                     user_id,
