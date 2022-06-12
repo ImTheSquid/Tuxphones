@@ -15,7 +15,6 @@ mod pulse;
 mod gstreamer;
 mod socket;
 mod x;
-mod websocket;
 mod discord;
 
 pub use socket::receive;
