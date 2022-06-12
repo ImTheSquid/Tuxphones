@@ -53,10 +53,15 @@ pub mod websocket {
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     #[serde(untagged)]
     pub enum WebsocketMessageD {
+        /// auth
         OpCode0(OpCode0),
+        /// Outgoing message containing info about the stream
         OpCode1(OpCode1),
+        /// Incoming message containing configuration options for webrtc connection
         OpCode2(OpCode2),
+        /// Initial heartbeat incoming configuration message
         OpCode8(OpCode8),
+        /// Outgoing message containing info about the stream
         OpCode12(OpCode12)
     }
 
@@ -93,6 +98,7 @@ pub mod websocket {
         pub max_resolution: Option<GatewayResolution>,
     }
 
+    /// Outgoing message containing info about the stream
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode0 {
         pub server_id: String,
@@ -104,7 +110,7 @@ pub mod websocket {
         pub video: bool,
     }
 
-    /// Incoming message containing configuration options for websocket connection
+    /// Incoming message containing configuration options for webrtc connection
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode2 {
         experiment: Vec<String>,
@@ -118,7 +124,7 @@ pub mod websocket {
         streams: Vec<GatewayStream>,
     }
 
-    /// Initial heartbeat incoming message
+    /// Initial heartbeat incoming configuration message
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode8 {
         /// the interval (in milliseconds) the client should heartbeat with
@@ -177,7 +183,6 @@ pub mod websocket {
         rtc_connection_id: String,
         codecs: Vec<GatewayCodec>,
         data: OpCode1Data,
-
     }
 
 
