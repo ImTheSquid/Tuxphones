@@ -89,28 +89,25 @@ pub mod websocket {
         /// https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87
         #[tracing::instrument]
         pub async fn auth(&mut self, server_id: String, session_id: String, token: String, user_id: String) -> Result<(), tokio_tungstenite::tungstenite::Error> {
-            let ws_message = WebsocketMessage {
-                op: 0,
-                d: WebsocketMessageD::OpCode0(OpCode0 {
-                    server_id,
-                    session_id,
-                    streams: vec![GatewayStream {
-                        stream_type: "video".to_string(),
-                        rid: 100,
-                        quality: 100,
+            let ws_message = WebsocketMessage::OpCode0(OpCode0 {
+                server_id,
+                session_id,
+                streams: vec![GatewayStream {
+                    stream_type: "video".to_string(),
+                    rid: 100,
+                    quality: 100,
 
-                        active: None,
-                        ssrc: None,
-                        rtx_ssrc: None,
-                        max_bitrate: None,
-                        max_framerate: None,
-                        max_resolution: None,
-                    }],
-                    token,
-                    user_id,
-                    video: true,
-                }),
-            };
+                    active: None,
+                    ssrc: None,
+                    rtx_ssrc: None,
+                    max_bitrate: None,
+                    max_framerate: None,
+                    max_resolution: None,
+                }],
+                token,
+                user_id,
+                video: true,
+            });
 
             let ws_message_string = serde_json::to_string(&ws_message).unwrap();
 

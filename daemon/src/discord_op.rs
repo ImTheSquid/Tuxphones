@@ -2,30 +2,31 @@ pub mod opcodes {
     use crate::EncryptionAlgorithm;
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct WebsocketMessage {
-        pub op: u8,
-        // TODO: find a way to tell serde to deserialize this based on the op
-        pub d: WebsocketMessageD,
-    }
-
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    #[serde(untagged)]
-    pub enum WebsocketMessageD {
+    #[serde(tag = "op", content = "d")]
+    pub enum WebsocketMessage {
         /// auth
+        #[serde(rename = "0")]
         OpCode0(OpCode0),
         /// Outgoing message containing info about the stream
+        #[serde(rename = "1")]
         OpCode1(OpCode1),
         /// Incoming message containing configuration options for webrtc connection
+        #[serde(rename = "2")]
         OpCode2(OpCode2),
         /// Outgoind heartbeat message
+        #[serde(rename = "3")]
         OpCode3(OpCode3_6),
         /// Incoming heartbeat message
+        #[serde(rename = "6")]
         OpCode6(OpCode3_6),
         /// Initial heartbeat incoming configuration message
+        #[serde(rename = "8")]
         OpCode8(OpCode8),
         /// Outgoing message containing info about the stream
+        #[serde(rename = "12")]
         OpCode12(OpCode12),
         /// Unknown outgoing message
+        #[serde(rename = "15")]
         OpCode15(OpCode15),
     }
 
