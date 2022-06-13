@@ -52,6 +52,8 @@ pub mod receive {
             token: String,
             /// Session ID
             session_id: String,
+            /// RTC Connection ID
+            rtc_connection_id: String,
             /// Target endpoint
             endpoint: String
         },

@@ -298,6 +298,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		} = DiscordModules;
 		const React = BdApi.React;
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
+		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId)).default;
 		const WebSocketControl = BdApi.findModule((m => m.default.prototype.streamCreate)).default;
 		const Button = BdApi.findModuleByProps("BorderColors");
 		const Tuxphones = class extends BasePlugin {
@@ -461,6 +462,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						user_id: AuthenticationStore.getId(),
 						token,
 						session_id: AuthenticationStore.getSessionId(),
+						rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
 						endpoint
 					}));
 					this.unixClient.destroy();
