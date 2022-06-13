@@ -68,6 +68,7 @@ impl CommandProcessor {
                                 user_id,
                                 token,
                                 session_id,
+                                rtc_connection_id,
                                 endpoint
                             } => {
                                 info!("[StartStream:{}] Command received", start_time);
