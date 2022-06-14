@@ -9,7 +9,8 @@ const React = BdApi.React;
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
 const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
 const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId).default;
-const WebSocketControl = BdApi.findModule(m => m.default.prototype.streamCreate).default;
+const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
+const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
 
 export default class extends BasePlugin {
@@ -26,7 +27,7 @@ export default class extends BasePlugin {
                 'The Tuxphones daemon was not detected.\n',
                 'If you don\'t know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:',
                 <a href='https://github.com/ImTheSquid/Tuxphones' target='_blank'>Tuxphones Github</a>,
-                ' \n', 
+                ' \n',
                 'If you\'re sure you already installed the daemon, make sure it\'s running then click "Reload Discord".'
             ], {
                 danger: true,
@@ -44,7 +45,7 @@ export default class extends BasePlugin {
         if (existsSync(this.serverSockPath)) {
             unlinkSync(this.serverSockPath);
         }
-        
+
         this.unixServer = createServer(sock => {
             let data = [];
             sock.on('data', d => data += d);
@@ -62,6 +63,13 @@ export default class extends BasePlugin {
         this.selectedFPS = null;
         this.selectedResoultion = null;
         this.serverId = null;
+        this.webSocketControlObj = null;
+
+
+        Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that, _, __) => {
+            this.webSocketControlObj = that;
+        })
+
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
                 let res = null;
@@ -71,19 +79,19 @@ export default class extends BasePlugin {
                         height: 720,
                         is_fixed: true
                     };
-                    break;
+                        break;
                     case 1080: res = {
                         width: 1920,
                         height: 1080,
                         is_fixed: true
                     };
-                    break;
+                        break;
                     default: res = {
                         width: 0,
                         height: 0,
                         is_fixed: false
                     };
-                    break;
+                        break;
                 }
                 this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
                 return;
@@ -105,7 +113,7 @@ export default class extends BasePlugin {
                                 this.selectedFPS = streamInfo.selectedFPS;
                                 this.selectedResoultion = streamInfo.selectedResoultion;
                                 this.serverId = streamInfo.guildId;
-                                this.createStream(streamInfo.guildId, streamInfo.selectedChannelId);
+                                this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
                             },
                             size: Button.Sizes.SMALL
                         }, "Go Live with Sound")}
@@ -119,7 +127,7 @@ export default class extends BasePlugin {
                 if (!Array.isArray(ret.props.children)) return;
                 Logger.log(arg)
                 //Logger.log(ret)
-    
+
                 if (arg.selectedSource.sound) {
                     ret.props.children[1] = <p style={{color: 'green', padding: '0px 16px'}}>Tuxphones sound enabled!</p>
                 } else {
@@ -135,8 +143,8 @@ export default class extends BasePlugin {
                 if (!module.default || !module.DesktopSources) return;
                 resolve(module);
                 cancel();
-        })}).then(m => {
-            Patcher.after(m, 'default', (_, __, ret) => {    
+            })}).then(m => {
+            Patcher.after(m, 'default', (_, __, ret) => {
                 return ret.then(vals => new Promise(res => {
                     const f = function dispatch(e) {
                         Dispatcher.unsubscribe('TUX_APPS', dispatch);
@@ -154,7 +162,7 @@ export default class extends BasePlugin {
                             return v;
                         }));
                     }
-    
+
                     Dispatcher.subscribe('TUX_APPS', f);
                     this.getInfo(vals.filter(v => v.id.startsWith('window')).map(v => parseInt(v.id.split(':')[1])));
                 }));
@@ -164,7 +172,7 @@ export default class extends BasePlugin {
 
     createStream(guild_id, channel_id) {
         this.interceptNextStreamServerUpdate = true;
-        WebSocketControl.streamCreate(
+        this.webSocketControlObj.streamCreate(
             guild_id === null ? 'call' : 'guild', // type
             guild_id, // guild_id
             channel_id, // channel or DM id

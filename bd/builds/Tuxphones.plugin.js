@@ -299,7 +299,8 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const React = BdApi.React;
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
 		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId)).default;
-		const WebSocketControl = BdApi.findModule((m => m.default.prototype.streamCreate)).default;
+		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
+		const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 		const Button = BdApi.findModuleByProps("BorderColors");
 		const Tuxphones = class extends BasePlugin {
 			onStart() {
@@ -340,6 +341,10 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				this.selectedFPS = null;
 				this.selectedResoultion = null;
 				this.serverId = null;
+				this.webSocketControlObj = null;
+				Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that => {
+					this.webSocketControlObj = that;
+				}));
 				Patcher.instead(Dispatcher, "dispatch", ((_, [arg], original) => {
 					if (this.interceptNextStreamServerUpdate && "STREAM_SERVER_UPDATE" === arg.type) {
 						let res = null;
@@ -385,7 +390,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 								this.selectedFPS = streamInfo.selectedFPS;
 								this.selectedResoultion = streamInfo.selectedResoultion;
 								this.serverId = streamInfo.guildId;
-								this.createStream(streamInfo.guildId, streamInfo.selectedChannelId);
+								this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
 							},
 							size: Button.Sizes.SMALL
 						}, "Go Live with Sound"));
@@ -434,7 +439,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 			}
 			createStream(guild_id, channel_id) {
 				this.interceptNextStreamServerUpdate = true;
-				WebSocketControl.streamCreate(null === guild_id ? "call" : "guild", guild_id, channel_id, null);
+				this.webSocketControlObj.streamCreate(null === guild_id ? "call" : "guild", guild_id, channel_id, null);
 			}
 			parseData(data) {
 				let obj = JSON.parse(data);
