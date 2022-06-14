@@ -298,7 +298,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		} = DiscordModules;
 		const React = BdApi.React;
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
-		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId)).default;
+		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId && m.default._changeCallbacks.size)).default;
 		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
 		const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 		const Button = BdApi.findModuleByProps("BorderColors");
