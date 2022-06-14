@@ -8,7 +8,7 @@ const React = BdApi.React;
 
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
 const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
-const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId).default;
+const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId && m.default._changeCallbacks.size).default;
 const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
 const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
