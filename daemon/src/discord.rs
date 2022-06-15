@@ -1,34 +1,3 @@
-pub mod api {
-    #[derive(serde::Deserialize)]
-    pub struct GetWsEndpointResponse {
-        pub url: String,
-    }
-
-    #[derive(Debug)]
-    pub enum ApiError {
-        ReqwestError(reqwest::Error),
-        ParseError(serde_json::Error),
-    }
-
-    impl From<reqwest::Error> for ApiError {
-        fn from(error: reqwest::Error) -> ApiError {
-            ApiError::ReqwestError(error)
-        }
-    }
-
-    impl From<serde_json::Error> for ApiError {
-        fn from(error: serde_json::Error) -> ApiError {
-            ApiError::ParseError(error)
-        }
-    }
-
-    pub async fn get_ws_endpoint() -> Result<GetWsEndpointResponse, ApiError> {
-        let body = reqwest::get("https://discord.com/api/gateway").await?.text().await?;
-
-        Ok(serde_json::from_str(&body)?)
-    }
-}
-
 pub mod websocket {
     use futures_util::SinkExt;
     use futures_util::stream::{SplitSink, StreamExt};
@@ -37,30 +6,9 @@ pub mod websocket {
     use tokio_tungstenite::tungstenite::Message;
     use tracing::{debug, info, trace};
 
-    use crate::discord::api::{ApiError, get_ws_endpoint};
     use crate::discord_op::opcodes::*;
 
     const API_VERSION: u8 = 7;
-
-
-    #[derive(Debug)]
-    pub enum WebsocketInitError {
-        ApiError(ApiError),
-        TungsteniteError(tokio_tungstenite::tungstenite::Error),
-    }
-
-    impl From<ApiError> for WebsocketInitError {
-        fn from(error: ApiError) -> WebsocketInitError {
-            WebsocketInitError::ApiError(error)
-        }
-    }
-
-
-    impl From<tokio_tungstenite::tungstenite::Error> for WebsocketInitError {
-        fn from(error: tokio_tungstenite::tungstenite::Error) -> WebsocketInitError {
-            WebsocketInitError::TungsteniteError(error)
-        }
-    }
 
     #[derive(Debug)]
     pub struct WebsocketConnection {
@@ -69,12 +17,9 @@ pub mod websocket {
 
     impl WebsocketConnection {
         #[tracing::instrument]
-        pub async fn new() -> Result<Self, WebsocketInitError> {
+        pub async fn new(endpoint: String) -> Result<Self, tokio_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
-            let endpoint = format!("{}/?v={}", get_ws_endpoint().await?.url, API_VERSION);
-            info!("Connecting to {}", endpoint);
-
-            let (ws_stream, response) = connect_async(endpoint).await?;
+            let (ws_stream, response) = connect_async(format!("{}/?v={}", endpoint, API_VERSION)).await?;
 
             let (write, read) = ws_stream.split();
 
