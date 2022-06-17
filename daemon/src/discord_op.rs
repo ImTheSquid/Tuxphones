@@ -1,42 +1,61 @@
 pub mod opcodes {
+    use lazy_static::lazy_static;
+    use regex::Regex;
+    use tracing::info;
     use crate::EncryptionAlgorithm;
 
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    lazy_static! {
+        static ref OPCODE_OUTGOING_REGEX: Regex = Regex::new(r#""op":"(?P<op>\d+)""#).unwrap();
+    }
+
+
+    #[derive(serde::Serialize, Debug)]
     #[serde(tag = "op", content = "d")]
-    pub enum WebsocketMessage {
+    pub enum OutgoingWebsocketMessage {
         /// auth
         #[serde(rename = "0")]
         OpCode0(OpCode0),
-        /// Outgoing message containing info about the stream
+        /// Message containing info about the stream
         #[serde(rename = "1")]
         OpCode1(OpCode1),
-        /// Incoming message containing configuration options for webrtc connection
-        #[serde(rename = "2")]
-        OpCode2(OpCode2),
-        /// Outgoind heartbeat message
+        /// Heartbeat message
         #[serde(rename = "3")]
         OpCode3(OpCode3_6),
-        /// Incoming heartbeat message
+        /// Message containing info about the stream
+        #[serde(rename = "12")]
+        OpCode12(OpCode12),
+        /// Unknown message
+        #[serde(rename = "15")]
+        OpCode15(OpCode15),
+    }
+
+    impl OutgoingWebsocketMessage {
+        pub fn to_json(&self) -> String {
+            OPCODE_OUTGOING_REGEX.replace(&serde_json::to_string(&self).unwrap(), "\"op\":$op").to_string()
+        }
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    #[serde(tag = "op", content = "d")]
+    pub enum IncomingWebsocketMessage {
+        /// Message containing configuration options for webrtc connection
+        #[serde(rename = "2")]
+        OpCode2(OpCode2),
+        /// Heartbeat message
         #[serde(rename = "6")]
         OpCode6(OpCode3_6),
         /// Initial heartbeat incoming configuration message
         #[serde(rename = "8")]
         OpCode8(OpCode8),
-        /// Outgoing message containing info about the stream
-        #[serde(rename = "12")]
-        OpCode12(OpCode12),
-        /// Unknown outgoing message
-        #[serde(rename = "15")]
-        OpCode15(OpCode15),
     }
 
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct GatewayResolution {
         #[serde(rename = "type")]
-        resolution_type: String,
-        width: u16,
-        height: u16,
+        pub resolution_type: String,
+        pub width: u16,
+        pub height: u16,
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -65,7 +84,7 @@ pub mod opcodes {
     }
 
     /// Outgoing message containing info about the stream
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Serialize, Debug)]
     pub struct OpCode0 {
         pub server_id: String,
         pub session_id: String,
@@ -100,67 +119,67 @@ pub mod opcodes {
         /// Encryption algorithm to use
         pub mode: EncryptionAlgorithm,
         /// My public port obtainable with an UDP IP discovery message
-        port: u16,
+        pub port: u16,
     }
 
     /// Outgoing message containing info about the stream
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Serialize, Debug)]
     pub struct OpCode1 {
         /// My public ip address obtainable with an UDP IP discovery message
-        address: String,
+        pub address: String,
         /// My public port obtainable with an UDP IP discovery message
-        port: u16,
-        experiments: Vec<String>,
+        pub port: u16,
+        pub experiments: Vec<String>,
         /// Encryption algorithm to use
-        mode: EncryptionAlgorithm,
-        protocol: String,
-        rtc_connection_id: String,
-        codecs: Vec<GatewayCodec>,
-        data: OpCode1Data,
+        pub mode: EncryptionAlgorithm,
+        pub protocol: String,
+        pub rtc_connection_id: String,
+        pub codecs: Vec<GatewayCodec>,
+        pub data: OpCode1Data,
     }
 
     /// Incoming message containing configuration options for webrtc connection
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Deserialize, Debug)]
     pub struct OpCode2 {
-        experiment: Vec<String>,
+        pub experiment: Vec<String>,
         /// Discord ip address to stream to
-        ip: String,
+        pub ip: String,
         /// Discord port to stream to
-        port: u16,
+        pub port: u16,
         /// Supported encrpytion modes by the server
-        modes: Vec<String>,
-        ssrc: u32,
-        streams: Vec<GatewayStream>,
+        pub modes: Vec<String>,
+        pub ssrc: u32,
+        pub streams: Vec<GatewayStream>,
     }
 
     /// Heartbeat message
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode3_6 {
         /// Random nonce
-        d: u64,
+        pub d: u64,
     }
 
     /// Initial heartbeat incoming configuration message
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Deserialize, Debug)]
     pub struct OpCode8 {
         /// the interval (in milliseconds) the client should heartbeat with
-        heartbeat_interval: u32,
+        pub heartbeat_interval: u64,
         /// api version
-        v: u8,
+        pub v: u8,
     }
 
     /// Outgoing message containing info about the stream
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Serialize, Debug)]
     pub struct OpCode12 {
-        audio_ssrc: u32,
-        rtx_ssrc: u32,
-        video_ssrc: u32,
-        streams: Vec<GatewayStream>,
+        pub audio_ssrc: u32,
+        pub rtx_ssrc: u32,
+        pub video_ssrc: u32,
+        pub streams: Vec<GatewayStream>,
     }
 
     ///  Unknown outgoing message
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Serialize, Debug)]
     pub struct OpCode15 {
-        any: u8,
+        pub any: u8,
     }
 }

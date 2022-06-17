@@ -3,8 +3,7 @@ use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::TRACE)
         .finish();

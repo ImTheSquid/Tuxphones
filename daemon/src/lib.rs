@@ -1,4 +1,6 @@
 use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread, process::Command};
+use async_std::task;
+use async_std::sync::Mutex as AsyncMutex;
 
 use gstreamer::GstHandle;
 use pulse::PulseHandle;
@@ -19,6 +21,7 @@ mod discord;
 mod discord_op;
 
 pub use socket::receive;
+use crate::discord::websocket::WebsocketConnection;
 
 use crate::gstreamer::{H264Settings, VideoEncoderType, EncryptionAlgorithm};
 
@@ -48,6 +51,7 @@ impl CommandProcessor {
             };
 
             let mut gstreamer: Option<GstHandle> = None;
+            let mut ws: Option<Arc<AsyncMutex<WebsocketConnection>>> = None;
 
             loop {
                 if !run.load(Ordering::SeqCst) {
@@ -71,6 +75,21 @@ impl CommandProcessor {
                                 rtc_connection_id,
                                 endpoint
                             } => {
+                                ws = match task::block_on(WebsocketConnection::new(endpoint)) {
+                                    Ok(ws_handle) => Some(ws_handle),
+                                    Err(e) => {
+                                        error!("Failed to create websocket connection: {:?}", e);
+                                        continue;
+                                    }
+                                };
+                                {
+                                    let ws = ws.as_ref().unwrap().clone();
+                                    task::block_on(async {
+                                        ws.lock().await.auth(server_id, session_id, token, user_id).await
+                                    }).expect("TODO: handle parse error");
+                                }
+
+
                                 info!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
@@ -94,7 +113,7 @@ impl CommandProcessor {
                                     nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
                                 }
 
-                                todo!("Implement GStreamer with new params");
+                                //todo!("Implement GStreamer with new params");
                                 /*gstreamer = match GstHandle::new(
                                     VideoEncoderType::H264(H264Settings { nvidia_encoder }),
                                     xid.into(),
@@ -130,6 +149,7 @@ impl CommandProcessor {
 
                                 // Kill gstreamer instance
                                 gstreamer.take();
+                                ws.take();
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
