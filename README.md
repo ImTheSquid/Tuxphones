@@ -8,6 +8,8 @@ Discord screensharing audio for Linux.
 - Rust
 - Cargo
 - Systemd
+- PulseAudio Dev Libraries
+- All GStreamer Dev Libraries
 
 ### Manual
 Run:
