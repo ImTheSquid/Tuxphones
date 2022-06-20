@@ -10,6 +10,7 @@ const React = BdApi.React;
 const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
 const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId && m.default._changeCallbacks.size).default;
 const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
+const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
 
@@ -64,7 +65,7 @@ export default class extends BasePlugin {
         this.selectedResoultion = null;
         this.serverId = null;
         this.webSocketControlObj = null;
-
+        this.ip = null;
 
         Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that, _, __) => {
             this.webSocketControlObj = that;
@@ -168,6 +169,11 @@ export default class extends BasePlugin {
                 }));
             });
         });
+
+        // Patch stream to get IP address
+        Patcher.before(RTCControlSocket.prototype, 'handleReady', (_, arg) => {
+            this.ip = arg.ip;
+        });
     }
 
     createStream(guild_id, channel_id) {
@@ -195,7 +201,7 @@ export default class extends BasePlugin {
         }
     }
 
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
@@ -208,7 +214,8 @@ export default class extends BasePlugin {
                 token: token,
                 session_id: AuthenticationStore.getSessionId(),
                 rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-                endpoint: endpoint
+                endpoint: endpoint,
+                ip: ip
             }));
             this.unixClient.destroy();
         });

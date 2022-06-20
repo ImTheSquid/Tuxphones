@@ -24,8 +24,8 @@ pub mod receive {
     #[derive(Deserialize, Debug)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
-        pub width: u32,
-        pub height: u32,
+        pub width: u16,
+        pub height: u16,
         /// Whether or not the stream resolution can change
         pub is_fixed: bool
     }
@@ -55,7 +55,9 @@ pub mod receive {
             /// RTC Connection ID
             rtc_connection_id: String,
             /// Target endpoint
-            endpoint: String
+            endpoint: String,
+            /// Current public IP
+            ip: String
         },
         /// Stops the currently-running stream
         StopStream,

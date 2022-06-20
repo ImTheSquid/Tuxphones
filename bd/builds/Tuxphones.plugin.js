@@ -300,6 +300,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
 		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId && m.default._changeCallbacks.size)).default;
 		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
+		const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 		const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 		const Button = BdApi.findModuleByProps("BorderColors");
 		const Tuxphones = class extends BasePlugin {
@@ -342,6 +343,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				this.selectedResoultion = null;
 				this.serverId = null;
 				this.webSocketControlObj = null;
+				this.ip = null;
 				Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that => {
 					this.webSocketControlObj = that;
 				}));
@@ -436,6 +438,9 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						this.getInfo(vals.filter((v => v.id.startsWith("window"))).map((v => parseInt(v.id.split(":")[1]))));
 					}))))));
 				}));
+				Patcher.before(RTCControlSocket.prototype, "handleReady", ((_, arg) => {
+					this.ip = arg.ip;
+				}));
 			}
 			createStream(guild_id, channel_id) {
 				this.interceptNextStreamServerUpdate = true;
@@ -455,7 +460,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
 			}
-			startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
+			startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
 					this.unixClient.write(JSON.stringify({
 						type: "StartStream",
@@ -468,7 +473,8 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						token,
 						session_id: AuthenticationStore.getSessionId(),
 						rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-						endpoint
+						endpoint,
+						ip
 					}));
 					this.unixClient.destroy();
 				}));

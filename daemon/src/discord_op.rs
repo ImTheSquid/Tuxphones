@@ -2,7 +2,7 @@ pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
     use tracing::info;
-    use crate::EncryptionAlgorithm;
+    use crate::{EncryptionAlgorithm, receive::StreamResolutionInformation};
 
     lazy_static! {
         static ref OPCODE_OUTGOING_REGEX: Regex = Regex::new(r#""op":"(?P<op>\d+)""#).unwrap();
@@ -50,7 +50,7 @@ pub mod opcodes {
     }
 
 
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
     pub struct GatewayResolution {
         #[serde(rename = "type")]
         pub resolution_type: String,
@@ -58,12 +58,22 @@ pub mod opcodes {
         pub height: u16,
     }
 
+    impl GatewayResolution {
+        pub fn from_socket_info(info: StreamResolutionInformation) -> Self {
+            GatewayResolution { resolution_type: if info.is_fixed {
+                "fixed"
+            } else {
+                "source"
+            }.to_string(), width: info.width, height: info.height }
+        }
+    }
+
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct GatewayStream {
         //Opcode 0 and 2 and 12 params
         #[serde(rename = "type")]
         pub stream_type: String,
-        pub rid: u8,
+        pub rid: String,
         pub quality: u8,
 
         //Opcode 2 and 12 params
@@ -110,6 +120,8 @@ pub mod opcodes {
         pub codec_type: PayloadType,
         pub priority: u16,
         pub payload_type: u8,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub rtx_payload_type: Option<u8>
     }
 
     #[derive(serde::Serialize, serde::Deserialize, Debug)]

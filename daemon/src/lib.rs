@@ -21,7 +21,7 @@ mod discord;
 mod discord_op;
 
 pub use socket::receive;
-use crate::discord::websocket::WebsocketConnection;
+use crate::{discord::websocket::WebsocketConnection, discord_op::opcodes::GatewayResolution};
 
 use crate::gstreamer::{H264Settings, VideoEncoderType, EncryptionAlgorithm};
 
@@ -73,23 +73,9 @@ impl CommandProcessor {
                                 token,
                                 session_id,
                                 rtc_connection_id,
-                                endpoint
+                                endpoint,
+                                ip
                             } => {
-                                ws = match task::block_on(WebsocketConnection::new(endpoint)) {
-                                    Ok(ws_handle) => Some(ws_handle),
-                                    Err(e) => {
-                                        error!("Failed to create websocket connection: {:?}", e);
-                                        continue;
-                                    }
-                                };
-                                {
-                                    let ws = ws.as_ref().unwrap().clone();
-                                    task::block_on(async {
-                                        ws.lock().await.auth(server_id, session_id, token, user_id).await
-                                    }).expect("TODO: handle parse error");
-                                }
-
-
                                 info!("[StartStream:{}] Command received", start_time);
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
@@ -105,6 +91,26 @@ impl CommandProcessor {
                                         error!("Failed to start pulse capture: {}", e);
                                         continue;
                                     }
+                                }
+
+                                ws = match task::block_on(WebsocketConnection::new(
+                                    endpoint,
+                                    framerate,
+                                    GatewayResolution::from_socket_info(resolution),
+                                    rtc_connection_id,
+                                    ip
+                                )) {
+                                    Ok(ws_handle) => Some(ws_handle),
+                                    Err(e) => {
+                                        error!("Failed to create websocket connection: {:?}", e);
+                                        continue;
+                                    }
+                                };
+                                {
+                                    let ws = ws.as_ref().unwrap().clone();
+                                    task::block_on(async {
+                                        ws.lock().await.auth(server_id, session_id, token, user_id).await
+                                    }).expect("TODO: handle parse error");
                                 }
                                 
                                 // Quick and drity check to try to detect Nvidia drivers

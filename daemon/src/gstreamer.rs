@@ -129,9 +129,11 @@ impl GstHandle {
         let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
+        let width = resolution.width as i32;
+        let height = resolution.height as i32;
         if resolution.is_fixed {
-            caps_options.push(("width", &resolution.width));
-            caps_options.push(("height", &resolution.height));
+            caps_options.push(("width", &width));
+            caps_options.push(("height", &height));
         };
 
         capsfilter.set_property("caps", &gst::Caps::new_simple(
