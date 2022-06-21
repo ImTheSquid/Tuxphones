@@ -21,7 +21,7 @@ pub mod receive {
     }
 
     /// Holds information relating to stream resolution
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Clone)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
         pub width: u16,

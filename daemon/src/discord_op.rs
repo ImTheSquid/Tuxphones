@@ -1,7 +1,6 @@
 pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
-    use tracing::info;
     use crate::{EncryptionAlgorithm, receive::StreamResolutionInformation};
 
     lazy_static! {
@@ -41,6 +40,9 @@ pub mod opcodes {
         /// Message containing configuration options for webrtc connection
         #[serde(rename = "2")]
         OpCode2(OpCode2),
+        /// Encryption information
+        #[serde(rename = "4")]
+        OpCode4(OpCode4),
         /// Heartbeat message
         #[serde(rename = "6")]
         OpCode6(OpCode3_6),
@@ -169,6 +171,23 @@ pub mod opcodes {
     pub struct OpCode3_6 {
         /// Random nonce
         pub d: u64,
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    pub enum AudioCodec {
+        #[serde(rename = "opus")]
+        Opus
+    }
+
+    #[derive(serde::Deserialize, Debug)]
+    pub struct OpCode4 {
+        /// Audio codec
+        pub audio_codec: AudioCodec,
+        /// Unknown value
+        pub media_session_id: String,
+        pub encryption_mode: String,
+        pub secret_key: Vec<u8>,
+        pub video_codec: String
     }
 
     /// Initial heartbeat incoming configuration message

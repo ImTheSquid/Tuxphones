@@ -96,9 +96,10 @@ impl CommandProcessor {
                                 ws = match task::block_on(WebsocketConnection::new(
                                     endpoint,
                                     framerate,
-                                    GatewayResolution::from_socket_info(resolution),
+                                    resolution,
                                     rtc_connection_id,
-                                    ip
+                                    ip,
+                                    xid
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
@@ -111,12 +112,6 @@ impl CommandProcessor {
                                     task::block_on(async {
                                         ws.lock().await.auth(server_id, session_id, token, user_id).await
                                     }).expect("TODO: handle parse error");
-                                }
-                                
-                                // Quick and drity check to try to detect Nvidia drivers
-                                let mut nvidia_encoder = false;
-                                if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
-                                    nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
                                 }
 
                                 //todo!("Implement GStreamer with new params");

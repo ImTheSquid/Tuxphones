@@ -1,5 +1,6 @@
 pub mod websocket {
     use std::borrow::Borrow;
+    use std::process::Command;
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -15,7 +16,9 @@ pub mod websocket {
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
-    use crate::gstreamer::EncryptionAlgorithm;
+    use crate::gstreamer::{EncryptionAlgorithm, GstHandle, VideoEncoderType, H264Settings};
+    use crate::receive::StreamResolutionInformation;
+    use crate::xid;
 
     const API_VERSION: u8 = 7;
     const MAX_BITRATE: u32 = 80000000;
@@ -27,11 +30,13 @@ pub mod websocket {
     #[derive(Debug)]
     pub struct WebsocketConnection {
         ws_write: SplitSink<WebSocketStream<ConnectStream>, Message>,
+        stream: Arc<Mutex<Option<GstHandle>>>
     }
 
     impl Drop for WebsocketConnection {
         fn drop(&mut self) {
             info!("Closing websocket connection");
+            
         }
     }
 
@@ -40,9 +45,10 @@ pub mod websocket {
         pub async fn new(
             endpoint: String,
             max_framerate: u8,
-            max_resolution: GatewayResolution,
+            max_resolution: StreamResolutionInformation,
             rtc_connection_id: String,
-            ip: String
+            ip: String,
+            xid: xid
         ) -> Result<Arc<Mutex<Self>>, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
             let (ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
@@ -51,14 +57,29 @@ pub mod websocket {
 
             let (ws_write, ws_read) = ws_stream.split();
 
+            let stream = Arc::new(Mutex::new(None));
+
             let ws_connection = Arc::new(Mutex::new(Self {
-                ws_write
+                ws_write,
+                stream: stream.clone()
             }));
+
+            let audio_ssrc = Arc::new(Mutex::new(None));
+            let video_ssrc = Arc::new(Mutex::new(None));
+            let rtx_ssrc = Arc::new(Mutex::new(None));
 
             let ws_listener = ws_read.for_each({
                 let ws_connection = ws_connection.clone();
+                let stream_arc = stream.clone();
+                let audio_ssrc_arc = audio_ssrc.clone();
+                let video_ssrc_arc = video_ssrc.clone();
+                let rtx_ssrc_arc = rtx_ssrc.clone();
                 move |msg| {
                     let ws_write_arc = ws_connection.clone();
+                    let stream_arc = stream_arc.clone();
+                    let audio_ssrc_arc = audio_ssrc.clone();
+                    let video_ssrc_arc = video_ssrc.clone();
+                    let rtx_ssrc_arc = rtx_ssrc.clone();
 
                     // Clone Strings to move across threads
                     let endpoint = endpoint.clone();
@@ -108,13 +129,33 @@ pub mod websocket {
                                     data.ssrc, 
                                     data.streams[0].rtx_ssrc.unwrap(), 
                                     data.streams[0].ssrc.unwrap(),
-                                    max_resolution, 
+                                    GatewayResolution::from_socket_info(max_resolution), 
                                     max_framerate, 
                                     data.port, 
                                     rtc_connection_id, 
-                                    endpoint, 
+                                    endpoint.clone(), 
                                     ip
                                 ).await.expect("Failed to send stream information");
+                            }
+                            IncomingWebsocketMessage::OpCode4(data) => {
+                                // Quick and drity check to try to detect Nvidia drivers
+                                let mut nvidia_encoder = false;
+                                if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                    nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
+                                }
+
+                                let _ = stream_arc.lock().await.insert(GstHandle::new(
+                                    VideoEncoderType::H264(H264Settings {nvidia_encoder}), 
+                                    xid, 
+                                    max_resolution.clone(), 
+                                    max_framerate.into(), 
+                                    audio_ssrc_arc.lock().await.unwrap(), 
+                                    video_ssrc_arc.lock().await.unwrap(), 
+                                    rtx_ssrc_arc.lock().await.unwrap(), 
+                                    &endpoint, 
+                                    EncryptionAlgorithm::aead_aes256_gcm, 
+                                    data.secret_key
+                                ).expect("Failed to start gstreamer"));
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
                                 if let Some(nonce) = nonce.lock().await.as_ref() {

@@ -73,6 +73,7 @@ impl From<PadLinkError> for GstInitializationError {
     }
 }
 
+#[derive(Debug)]
 pub struct GstHandle {
     pipeline: gst::Pipeline,
     webrtcbin: Element,
@@ -105,7 +106,7 @@ impl Drop for GstHandle {
 
 impl GstHandle {
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: u64, resolution: StreamResolutionInformation, fps: i32,
+        encoder_to_use: VideoEncoderType, xid: u32, resolution: StreamResolutionInformation, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
