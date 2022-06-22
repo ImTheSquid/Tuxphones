@@ -1,8 +1,6 @@
-use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread, process::Command};
+use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread};
 use async_std::task;
-use async_std::sync::Mutex as AsyncMutex;
 
-use gstreamer::GstHandle;
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
 use sysinfo::{SystemExt, ProcessExt, Process, Pid, PidExt};
@@ -21,9 +19,9 @@ mod discord;
 mod discord_op;
 
 pub use socket::receive;
-use crate::{discord::websocket::WebsocketConnection, discord_op::opcodes::GatewayResolution};
+use crate::discord::websocket::WebsocketConnection;
 
-use crate::gstreamer::{H264Settings, VideoEncoderType, EncryptionAlgorithm};
+use crate::gstreamer::EncryptionAlgorithm;
 
 pub struct CommandProcessor {
     thread: Option<thread::JoinHandle<()>>
@@ -50,11 +48,12 @@ impl CommandProcessor {
                 }
             };
 
-            let mut gstreamer: Option<GstHandle> = None;
-            let mut ws: Option<Arc<AsyncMutex<WebsocketConnection>>> = None;
+            let mut ws: Option<WebsocketConnection> = None;
 
             loop {
                 if !run.load(Ordering::SeqCst) {
+                    // Kill websocket if still running
+                    ws.take();
                     info!("Command processor shut down");
                     break;
                 }
@@ -99,7 +98,11 @@ impl CommandProcessor {
                                     resolution,
                                     rtc_connection_id,
                                     ip,
-                                    xid
+                                    xid,
+                                    server_id,
+                                    session_id,
+                                    token,
+                                    user_id
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
@@ -107,12 +110,12 @@ impl CommandProcessor {
                                         continue;
                                     }
                                 };
-                                {
+                                /*{
                                     let ws = ws.as_ref().unwrap().clone();
                                     task::block_on(async {
                                         ws.lock().await.auth(server_id, session_id, token, user_id).await
                                     }).expect("TODO: handle parse error");
-                                }
+                                }*/
 
                                 //todo!("Implement GStreamer with new params");
                                 /*gstreamer = match GstHandle::new(
@@ -148,8 +151,7 @@ impl CommandProcessor {
                             SocketListenerCommand::StopStream => {
                                 info!("[StopStream:{}] Command received", start_time);
 
-                                // Kill gstreamer instance
-                                gstreamer.take();
+                                // Kill gstreamer and ws
                                 ws.take();
 
                                 pulse.stop_capture();
