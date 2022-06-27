@@ -340,7 +340,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				this.interceptNextStreamServerUpdate = false;
 				this.currentSoundProfile = null;
 				this.selectedFPS = null;
-				this.selectedResoultion = null;
+				this.selectedResolution = null;
 				this.serverId = null;
 				this.webSocketControlObj = null;
 				this.ip = null;
@@ -350,7 +350,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				Patcher.instead(Dispatcher, "dispatch", ((_, [arg], original) => {
 					if (this.interceptNextStreamServerUpdate && "STREAM_SERVER_UPDATE" === arg.type) {
 						let res = null;
-						switch (this.selectedResoultion) {
+						switch (this.selectedResolution) {
 							case 720:
 								res = {
 									width: 1280,
@@ -373,7 +373,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 								};
 								break;
 						}
-						this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
+						this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
 						return;
 					}
 					original(arg);
@@ -390,7 +390,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 								const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
 								this.currentSoundProfile = streamInfo.selectedSource.sound;
 								this.selectedFPS = streamInfo.selectedFPS;
-								this.selectedResoultion = streamInfo.selectedResoultion;
+								this.selectedResolution = streamInfo.selectedResolution;
 								this.serverId = streamInfo.guildId;
 								this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
 							},
@@ -438,8 +438,8 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						this.getInfo(vals.filter((v => v.id.startsWith("window"))).map((v => parseInt(v.id.split(":")[1]))));
 					}))))));
 				}));
-				Patcher.before(RTCControlSocket.prototype, "handleReady", ((_, arg) => {
-					this.ip = arg.ip;
+				Patcher.before(RTCControlSocket.prototype, "send", ((_, [op, d]) => {
+					if (1 === op) this.ip = d.address;
 				}));
 			}
 			createStream(guild_id, channel_id) {

@@ -1,4 +1,4 @@
-use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process};
+use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process, panic};
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
@@ -29,6 +29,14 @@ fn main() {
             process::exit(1);
         }
     }
+
+    // Panic handling
+    // https://stackoverflow.com/questions/35988775/how-can-i-cause-a-panic-on-a-thread-to-immediately-end-the-main-thread
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        orig_hook(panic_info);
+        process::exit(1);
+    }));
 
     let (sender, receiver) = mpsc::channel();
 

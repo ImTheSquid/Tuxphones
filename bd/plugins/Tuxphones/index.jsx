@@ -62,7 +62,7 @@ export default class extends BasePlugin {
         this.interceptNextStreamServerUpdate = false;
         this.currentSoundProfile = null;
         this.selectedFPS = null;
-        this.selectedResoultion = null;
+        this.selectedResolution = null;
         this.serverId = null;
         this.webSocketControlObj = null;
         this.ip = null;
@@ -74,7 +74,7 @@ export default class extends BasePlugin {
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
                 let res = null;
-                switch (this.selectedResoultion) {
+                switch (this.selectedResolution) {
                     case 720: res = {
                         width: 1280,
                         height: 720,
@@ -94,7 +94,7 @@ export default class extends BasePlugin {
                     };
                         break;
                 }
-                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
+                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
                 return;
             }
             original(arg);
@@ -112,7 +112,7 @@ export default class extends BasePlugin {
                                 const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
                                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                                 this.selectedFPS = streamInfo.selectedFPS;
-                                this.selectedResoultion = streamInfo.selectedResoultion;
+                                this.selectedResolution = streamInfo.selectedResolution;
                                 this.serverId = streamInfo.guildId;
                                 this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
                             },
@@ -171,9 +171,11 @@ export default class extends BasePlugin {
         });
 
         // Patch stream to get IP address
-        Patcher.before(RTCControlSocket.prototype, 'handleReady', (_, arg) => {
-            this.ip = arg.ip;
-        });
+        Patcher.before(RTCControlSocket.prototype, 'send', (_, [op, d]) => {
+            if (op === 1) {
+                this.ip = d.address;
+            }
+        })
     }
 
     createStream(guild_id, channel_id) {

@@ -13,6 +13,7 @@ pub mod websocket {
     use futures_util::{SinkExt};
     use futures_util::stream::{SplitSink, StreamExt};
     use lazy_static::lazy_static;
+    use rand::Rng;
     use regex::Regex;
     use tracing::{debug, error, info, trace};
 
@@ -57,9 +58,15 @@ pub mod websocket {
             user_id: String
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
-            let (ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
+            let (mut ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
 
-            debug!("Connected with response code: {:?}", response.status());
+            if response.status() != 101 {
+                error!("Connection failed with response code: {:?}", response.status());
+                let _ = task::block_on(ws_stream.close(None));
+                return Err(async_tungstenite::tungstenite::Error::ConnectionClosed);
+            } else {
+                info!("WebSocket connection successful");
+            }
 
             let (ws_write, ws_read) = ws_stream.split();
 
@@ -108,8 +115,8 @@ pub mod websocket {
                         let msg: IncomingWebsocketMessage = match serde_json::from_str(&msg) {
                             Ok(msg) => msg,
                             Err(e) => {
-                                trace!("Websocket message: {:?}", msg);
-                                error!("Failed to deserialize websocket message: {:?}", e);
+                                error!("Failed to deserialize websocket message: {}", msg);
+                                error!("Deserialization returned error: {:?}", e);
                                 return;
                             }
                         };
@@ -170,13 +177,22 @@ pub mod websocket {
                             }
                             IncomingWebsocketMessage::OpCode8(data) => {
                                 debug!("Websocket heartbeat interval: {}", data.heartbeat_interval);
+                                ws_write.lock().await.borrow_mut().send(Message::Text("{\"op\":16,\"d\":{}}".to_string())).await.unwrap();
                                 task::spawn(async move {
                                     let ws_write = ws_write.clone();
+                                    let mut is_first = true;
                                     loop {
-                                        task::sleep(Duration::from_millis(data.heartbeat_interval)).await;
+                                        let multiplier = if is_first {
+                                            rand::thread_rng().gen_range(0.0..1.0)
+                                        } else {
+                                            1.0
+                                        };
+
+                                        task::sleep(Duration::from_millis(data.heartbeat_interval * multiplier as u64)).await;
                                         // TODO: Better error handling
                                         let _ = nonce.lock().await.insert(Self::send_heartbeat(ws_write.lock().await.borrow_mut()).await.expect("Failed to send heartbeat"));
                                         debug!("Sent websocket heartbeat");
+                                        is_first = false;
                                     }
                                 });
                             }
@@ -210,7 +226,7 @@ pub mod websocket {
                 server_id,
                 session_id,
                 streams: vec![GatewayStream {
-                    stream_type: "video".to_string(),
+                    stream_type: "screen".to_string(),
                     rid: "100".to_string(),
                     quality: 100,
                     active: None,
@@ -225,7 +241,7 @@ pub mod websocket {
                 video: true,
             }).to_json();
 
-            trace!("{:?}", ws_message);
+            trace!("[AUTH] {:?}", ws_message);
 
             write.send(Message::Text(ws_message)).await?;
 
@@ -239,7 +255,7 @@ pub mod websocket {
                 d: nonce,
             }).to_json();
 
-            trace!("Sending heartbeat message: {}", ws_message);
+            trace!("[HEARTBEAT] {}", ws_message);
 
             write.send(Message::Text(ws_message)).await?;
 
@@ -274,6 +290,8 @@ pub mod websocket {
                     }
                 ] 
             }).to_json();
+
+            trace!("[PARTIAL STREAM] {ws12}");
 
             write.send(Message::Text(ws12)).await?;
             Ok(())
@@ -331,6 +349,8 @@ pub mod websocket {
                     port
                 }
             }).to_json();
+
+            trace!("[STREAM] {ws1}");
 
             write.send(Message::Text(ws1)).await?;
 

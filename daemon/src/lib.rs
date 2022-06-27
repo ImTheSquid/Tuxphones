@@ -1,4 +1,4 @@
-use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime, UNIX_EPOCH}, thread};
+use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
 use async_std::task;
 
 use pulse::PulseHandle;
@@ -60,7 +60,6 @@ impl CommandProcessor {
 
                 match receiver.try_recv() {
                     Ok(cmd) => {
-                        let start_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                         match cmd {
                             SocketListenerCommand::StartStream { 
                                 pid,
@@ -75,7 +74,7 @@ impl CommandProcessor {
                                 endpoint,
                                 ip
                             } => {
-                                info!("[StartStream:{}] Command received", start_time);
+                                info!("[StartStream] Command received");
                                 match pulse.setup_audio_capture(None) {
                                     Ok(_) => {},
                                     Err(e) => {
@@ -146,10 +145,10 @@ impl CommandProcessor {
                                     }
                                 }*/
 
-                                info!("[StartStream:{}] Command processed (stream started)", start_time);
+                                info!("[StartStream] Command processed (stream started)");
                             },
                             SocketListenerCommand::StopStream => {
-                                info!("[StopStream:{}] Command received", start_time);
+                                info!("[StopStream] Command received");
 
                                 // Kill gstreamer and ws
                                 ws.take();
@@ -157,10 +156,10 @@ impl CommandProcessor {
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
 
-                                info!("[StopStream:{}] Command processed (stream stopped)", start_time);
+                                info!("[StopStream] Command processed (stream stopped)");
                             },
                             SocketListenerCommand::GetInfo { xids } => {
-                                info!("[GetInfo:{}] Command received", start_time);
+                                info!("[GetInfo] Command received");
 
                                 // Find all PIDs of given XIDs
                                 let xid_pid: Vec<(xid, pid)> = xids
@@ -217,7 +216,7 @@ impl CommandProcessor {
                                 }
 
                                 match socket::send::application_info(&found_applications) {
-                                    Ok(_) => info!("[GetInfo:{}] Command processed (applications found: {})", start_time, found_applications.len()),
+                                    Ok(_) => info!("[GetInfo] Command processed (applications found: {})", found_applications.len()),
                                     Err(e) => error!("Failed to send application data: {}", e)
                                 }
                             }
