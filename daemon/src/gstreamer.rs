@@ -7,7 +7,7 @@ use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::error;
 
-use crate::receive::StreamResolutionInformation;
+use crate::{receive::StreamResolutionInformation, xid};
 
 //Gstreamer handles count to prevent deinitialization of gstreamer
 static HANDLES_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
@@ -51,6 +51,12 @@ impl EncryptionAlgorithm {
     pub fn to_gst_str(&self) -> &'static str {
         match self {
             EncryptionAlgorithm::aead_aes256_gcm => "aes-256-gcm",
+        }
+    }
+
+    pub fn to_discord_str(&self) -> &'static str {
+        match self {
+            EncryptionAlgorithm::aead_aes256_gcm => "aead_aes256_gcm",
         }
     }
 }
@@ -106,7 +112,7 @@ impl Drop for GstHandle {
 
 impl GstHandle {
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: u32, resolution: StreamResolutionInformation, fps: i32,
+        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
@@ -144,7 +150,7 @@ impl GstHandle {
 
         ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
-        ximagesrc.set_property("xid", xid);
+        ximagesrc.set_property("xid", xid as u64);
 
         //Create a new videoconvert to allow encoding of the raw video
         let videoconvert = gst::ElementFactory::make("videoconvert", None)?;

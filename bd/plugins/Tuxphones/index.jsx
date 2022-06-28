@@ -94,8 +94,29 @@ export default class extends BasePlugin {
                     };
                         break;
                 }
+
+                this.streamKey = arg.streamKey;
+                this.webSocketControlObj.streamSetPaused(this.streamKey, false);
+
                 this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
                 return;
+            } else if (this.currentSoundProfile) {
+                // Hide the stream's existence from Discord until ready to test Tuxphones/Discord interaction
+                switch (arg.type) {
+                    case 'STREAM_CREATE':
+                        this.serverId = arg.rtcServerId;
+                        return;
+                    case 'STREAM_UPDATE':
+                        // this.streamKey = arg.streamKey;
+                        return;
+                    case 'VOICE_STATE_UPDATES':
+                        arg.voiceStates[0].selfStream = false;
+                        break;
+                }
+            } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
+                Logger.log(arg)
+            } else {
+                Logger.log(arg.type)
             }
             original(arg);
         });
@@ -113,7 +134,7 @@ export default class extends BasePlugin {
                                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                                 this.selectedFPS = streamInfo.selectedFPS;
                                 this.selectedResolution = streamInfo.selectedResolution;
-                                this.serverId = streamInfo.guildId;
+                                // this.serverId = streamInfo.guildId;
                                 this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
                             },
                             size: Button.Sizes.SMALL
@@ -203,6 +224,8 @@ export default class extends BasePlugin {
         }
     }
 
+    // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
+    // Guild ID will always exist, so get RTC Server ID
     startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
         this.unixClient = createConnection(this.sockPath, () => {
             this.unixClient.write(JSON.stringify({
@@ -214,7 +237,7 @@ export default class extends BasePlugin {
                 server_id: server_id,
                 user_id: AuthenticationStore.getId(),
                 token: token,
-                session_id: AuthenticationStore.getSessionId(),
+                session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
                 rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
                 endpoint: endpoint,
                 ip: ip

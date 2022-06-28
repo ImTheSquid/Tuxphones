@@ -22,10 +22,7 @@ pub mod opcodes {
         OpCode3(OpCode3_6),
         /// Message containing info about the stream
         #[serde(rename = "12")]
-        OpCode12(OpCode12),
-        /// Unknown message
-        #[serde(rename = "15")]
-        OpCode15(OpCode15),
+        OpCode12(OpCode12)
     }
 
     impl OutgoingWebsocketMessage {
@@ -49,6 +46,12 @@ pub mod opcodes {
         /// Initial heartbeat incoming configuration message
         #[serde(rename = "8")]
         OpCode8(OpCode8),
+        /// Unknown message
+        #[serde(rename = "15")]
+        OpCode15(OpCode15),
+        // Version information
+        #[serde(rename = "16")]
+        OpCode16(OpCode16)
     }
 
 
@@ -155,7 +158,6 @@ pub mod opcodes {
     /// Incoming message containing configuration options for webrtc connection
     #[derive(serde::Deserialize, Debug)]
     pub struct OpCode2 {
-        pub experiment: Vec<String>,
         /// Discord ip address to stream to
         pub ip: String,
         /// Discord port to stream to
@@ -163,7 +165,7 @@ pub mod opcodes {
         /// Supported encrpytion modes by the server
         pub modes: Vec<String>,
         pub ssrc: u32,
-        pub streams: Vec<GatewayStream>,
+        pub streams: Vec<GatewayStream>
     }
 
     /// Heartbeat message
@@ -185,6 +187,7 @@ pub mod opcodes {
         pub audio_codec: AudioCodec,
         /// Unknown value
         pub media_session_id: String,
+        #[serde(rename = "mode")]
         pub encryption_mode: String,
         pub secret_key: Vec<u8>,
         pub video_codec: String
@@ -209,8 +212,15 @@ pub mod opcodes {
     }
 
     ///  Unknown outgoing message
-    #[derive(serde::Serialize, Debug)]
+    #[derive(serde::Deserialize, Debug)]
     pub struct OpCode15 {
         pub any: u8,
+    }
+
+    // Version information
+    #[derive(serde::Deserialize, Debug)]
+    pub struct OpCode16 {
+        pub voice: String,
+        pub rtc_worker: String
     }
 }

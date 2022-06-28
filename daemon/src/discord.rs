@@ -2,6 +2,7 @@ pub mod websocket {
     use std::borrow::BorrowMut;
     use std::process::Command;
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use async_std::task::JoinHandle;
@@ -78,6 +79,10 @@ pub mod websocket {
             let video_ssrc = Arc::new(Mutex::new(None));
             let rtx_ssrc = Arc::new(Mutex::new(None));
 
+            let op15_count = Arc::new(AtomicUsize::new(0));
+            let nonce = Arc::new(Mutex::new(None));
+            let secret_key = Arc::new(Mutex::new(None));
+
             let ws_listener = ws_read.for_each({
                 let ws_write = ws_write.clone();
                 move |msg| {
@@ -86,6 +91,10 @@ pub mod websocket {
                     let video_ssrc_arc = video_ssrc.clone();
                     let rtx_ssrc_arc = rtx_ssrc.clone();
                     let ws_write = ws_write.clone();
+                    let secret_key = secret_key.clone();
+
+                    let op15_count = op15_count.clone();
+                    let nonce_arc = nonce.clone();
 
                     // Clone Strings to move across threads
                     let endpoint = endpoint.clone();
@@ -123,19 +132,25 @@ pub mod websocket {
 
                         trace!("{:?}", msg);
 
-                        let nonce = Arc::new(Mutex::new(None));
-
                         match msg {
                             IncomingWebsocketMessage::OpCode2(data) => {
-                                if !data.modes.contains(&EncryptionAlgorithm::aead_aes256_gcm.to_gst_str().to_string()) {
+                                if !data.modes.contains(&EncryptionAlgorithm::aead_aes256_gcm.to_discord_str().to_string()) {
                                     panic!("No supported encryption mode!");
                                 }
 
+                                let audio_ssrc = data.ssrc;
+                                let rtx_ssrc = data.streams[0].rtx_ssrc.unwrap();
+                                let video_ssrc = data.streams[0].ssrc.unwrap();
+
+                                let _ = audio_ssrc_arc.lock().await.insert(audio_ssrc);
+                                let _ = video_ssrc_arc.lock().await.insert(video_ssrc);
+                                let _ = rtx_ssrc_arc.lock().await.insert(rtx_ssrc);
+
                                 Self::send_stream_information(
                                     ws_write.lock().await.borrow_mut(),
-                                    data.ssrc, 
-                                    data.streams[0].rtx_ssrc.unwrap(), 
-                                    data.streams[0].ssrc.unwrap(),
+                                    audio_ssrc, 
+                                    rtx_ssrc, 
+                                    video_ssrc,
                                     GatewayResolution::from_socket_info(max_resolution), 
                                     max_framerate, 
                                     data.port, 
@@ -145,31 +160,10 @@ pub mod websocket {
                                 ).await.expect("Failed to send stream information");
                             }
                             IncomingWebsocketMessage::OpCode4(data) => {
-                                // Quick and drity check to try to detect Nvidia drivers
-                                let mut nvidia_encoder = false;
-                                if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
-                                    nvidia_encoder = String::from_utf8_lossy(&out.stdout).contains("nvidia");
-                                }
-
-                                let gst = GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings {nvidia_encoder}), 
-                                    xid, 
-                                    max_resolution.clone(), 
-                                    max_framerate.into(), 
-                                    audio_ssrc_arc.lock().await.unwrap(), 
-                                    video_ssrc_arc.lock().await.unwrap(), 
-                                    rtx_ssrc_arc.lock().await.unwrap(), 
-                                    &endpoint, 
-                                    EncryptionAlgorithm::aead_aes256_gcm, 
-                                    data.secret_key
-                                ).expect("Failed to start gstreamer");
-
-                                gst.start().expect("Failed to start stream");
-
-                                let _ = stream_arc.lock().await.insert(gst);
+                                let _ = secret_key.lock().await.insert(data.secret_key);
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
-                                if let Some(nonce) = nonce.lock().await.as_ref() {
+                                if let Some(nonce) = nonce_arc.lock().await.as_ref() {
                                     if *nonce != data.d {
                                         error!("Heartbeat nonce values didn't match!");
                                     }
@@ -177,12 +171,13 @@ pub mod websocket {
                             }
                             IncomingWebsocketMessage::OpCode8(data) => {
                                 debug!("Websocket heartbeat interval: {}", data.heartbeat_interval);
-                                ws_write.lock().await.borrow_mut().send(Message::Text("{\"op\":16,\"d\":{}}".to_string())).await.unwrap();
+
                                 task::spawn(async move {
+                                    let nonce_arc = nonce_arc.clone();
                                     let ws_write = ws_write.clone();
                                     let mut is_first = true;
                                     loop {
-                                        let multiplier = if is_first {
+                                        let multiplier: f64 = if is_first {
                                             rand::thread_rng().gen_range(0.0..1.0)
                                         } else {
                                             1.0
@@ -190,11 +185,43 @@ pub mod websocket {
 
                                         task::sleep(Duration::from_millis(data.heartbeat_interval * multiplier as u64)).await;
                                         // TODO: Better error handling
-                                        let _ = nonce.lock().await.insert(Self::send_heartbeat(ws_write.lock().await.borrow_mut()).await.expect("Failed to send heartbeat"));
+                                        let _ = nonce_arc.lock().await.insert(Self::send_heartbeat(ws_write.lock().await.borrow_mut()).await.expect("Failed to send heartbeat"));
                                         debug!("Sent websocket heartbeat");
                                         is_first = false;
                                     }
                                 });
+                            }
+                            IncomingWebsocketMessage::OpCode15(_) => {
+                                let prev = op15_count.fetch_add(1, Ordering::SeqCst);
+                                // Expect 3 op 15's
+                                if prev == 2 {
+                                    // Quick and drity check to try to detect Nvidia drivers
+                                    let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                        String::from_utf8_lossy(&out.stdout).contains("nvidia")
+                                    } else { false };
+
+                                    let gst = GstHandle::new(
+                                        VideoEncoderType::H264(H264Settings {nvidia_encoder}), 
+                                        xid, 
+                                        max_resolution.clone(), 
+                                        max_framerate.into(), 
+                                        audio_ssrc_arc.lock().await.unwrap(), 
+                                        video_ssrc_arc.lock().await.unwrap(), 
+                                        rtx_ssrc_arc.lock().await.unwrap(), 
+                                        &endpoint, 
+                                        EncryptionAlgorithm::aead_aes256_gcm, 
+                                        secret_key.lock().await.take().unwrap()
+                                    ).expect("Failed to start gstreamer");
+
+                                    gst.start().expect("Failed to start stream");
+
+                                    let _ = stream_arc.lock().await.insert(gst);
+                                }
+                            }
+                            IncomingWebsocketMessage::OpCode16(data) => {
+                                debug!("Received version information:");
+                                debug!("Voice Server: {}", data.voice);
+                                debug!("RTC Worker: {}", data.rtc_worker);
                             }
                         }
                     }

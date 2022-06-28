@@ -373,9 +373,21 @@ function buildPlugin([BasePlugin, PluginApi]) {
 								};
 								break;
 						}
+						this.streamKey = arg.streamKey;
+						this.webSocketControlObj.streamSetPaused(this.streamKey, false);
 						this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
 						return;
-					}
+					} else if (this.currentSoundProfile) switch (arg.type) {
+							case "STREAM_CREATE":
+								this.serverId = arg.rtcServerId;
+								return;
+							case "STREAM_UPDATE":
+								return;
+							case "VOICE_STATE_UPDATES":
+								arg.voiceStates[0].selfStream = false;
+								break;
+						} else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) Logger.log(arg);
+						else Logger.log(arg.type);
 					original(arg);
 				}));
 				ContextMenu.getDiscordMenu("GoLiveModal").then((m => {
@@ -391,7 +403,6 @@ function buildPlugin([BasePlugin, PluginApi]) {
 								this.currentSoundProfile = streamInfo.selectedSource.sound;
 								this.selectedFPS = streamInfo.selectedFPS;
 								this.selectedResolution = streamInfo.selectedResolution;
-								this.serverId = streamInfo.guildId;
 								this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
 							},
 							size: Button.Sizes.SMALL
