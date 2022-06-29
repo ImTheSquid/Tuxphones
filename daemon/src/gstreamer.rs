@@ -230,11 +230,7 @@ impl GstHandle {
             WebRTCSDPType::Offer,
             sdp
         );
-
-        let promise = gst::Promise::with_change_func(|_reply| {
-        });
-
-        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &promise]);
+        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
 
         //Link encoderpay to rtpmux video sink
