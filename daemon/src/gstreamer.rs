@@ -133,17 +133,20 @@ impl GstHandle {
         let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
-        let width = resolution.width as i32;
-        let height = resolution.height as i32;
+        let width = resolution.width as u32;
+        let height = resolution.height as u32;
         if resolution.is_fixed {
             caps_options.push(("width", &width));
             caps_options.push(("height", &height));
         };
 
+        /*
         capsfilter.set_property("caps", &gst::Caps::new_simple(
             "video/x-raw",
             caps_options.as_ref()
         ));
+
+         */
 
         ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
