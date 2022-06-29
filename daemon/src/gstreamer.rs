@@ -250,7 +250,7 @@ impl GstHandle {
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
         //Link rtpmux with the encoder
-        Element::link_many(&[&rtpmux, &srtpenc])?;
+        Element::link(&rtpmux, &srtpenc)?;
         //Link webrtcbin sink with the rtpmux src
         gst::Pad::link(&srtp_src, &webrtcbin_sink)?;
 
