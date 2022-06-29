@@ -3,6 +3,7 @@ pub mod websocket {
     use std::process::Command;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc::Sender;
     use std::time::Duration;
 
     use async_std::task::JoinHandle;
@@ -16,11 +17,12 @@ pub mod websocket {
     use lazy_static::lazy_static;
     use rand::Rng;
     use regex::Regex;
+    use serde_json::{Value, Number};
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
     use crate::gstreamer::{EncryptionAlgorithm, GstHandle, VideoEncoderType, H264Settings};
-    use crate::receive::StreamResolutionInformation;
+    use crate::receive::{StreamResolutionInformation, SocketListenerCommand};
     use crate::xid;
 
     const API_VERSION: u8 = 7;
@@ -34,13 +36,24 @@ pub mod websocket {
 
     #[derive(Debug)]
     pub struct WebsocketConnection {
-        task: Option<JoinHandle<()>>
+        task: Option<JoinHandle<()>>,
+        heartbeat_task: Arc<Mutex<Option<JoinHandle<()>>>>
     }
 
     impl Drop for WebsocketConnection {
         fn drop(&mut self) {
             info!("Closing websocket connection");
-            task::spawn(self.task.take().unwrap().cancel());
+            
+            let heartbeat_task = self.heartbeat_task.clone();
+            task::spawn(async move {
+                if let Some(task) = heartbeat_task.lock().await.take() {
+                    task.cancel().await;
+                }
+            });
+
+            if let Some(task) = self.task.take() {
+                task::spawn(task.cancel());
+            }
         }
     }
 
@@ -56,7 +69,8 @@ pub mod websocket {
             server_id: String,
             session_id: String,
             token: String,
-            user_id: String
+            user_id: String,
+            command_sender: Sender<SocketListenerCommand>
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
             let (mut ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
@@ -83,8 +97,12 @@ pub mod websocket {
             let nonce = Arc::new(Mutex::new(None));
             let secret_key = Arc::new(Mutex::new(None));
 
+            let heartbeat_task = Arc::new(Mutex::new(None));
+
             let ws_listener = ws_read.for_each({
+                let heartbeat_task = heartbeat_task.clone();
                 let ws_write = ws_write.clone();
+                let command_sender = command_sender.clone();
                 move |msg| {
                     let stream_arc = stream.clone();
                     let audio_ssrc_arc = audio_ssrc.clone();
@@ -92,6 +110,8 @@ pub mod websocket {
                     let rtx_ssrc_arc = rtx_ssrc.clone();
                     let ws_write = ws_write.clone();
                     let secret_key = secret_key.clone();
+                    let command_sender = command_sender.clone();
+                    let heartbeat_task = heartbeat_task.clone();
 
                     let op15_count = op15_count.clone();
                     let nonce_arc = nonce.clone();
@@ -104,6 +124,15 @@ pub mod websocket {
                     async move {
                         let mut msg = match msg {
                             Ok(ws_msg) => {
+                                // Handle close codes
+                                if ws_msg.is_close() {
+                                    if let Err(e) = command_sender.clone().send(SocketListenerCommand::StopStreamInternal) {
+                                        error!("Failed to notify command processor of stream stop: {e}");
+                                    }
+
+                                    return;
+                                }
+
                                 match ws_msg.to_text() {
                                     Ok(msg) => msg.to_string(),
                                     Err(e) => {
@@ -164,7 +193,14 @@ pub mod websocket {
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
                                 if let Some(nonce) = nonce_arc.lock().await.as_ref() {
-                                    if *nonce != data.d {
+                                    // Make sure casting is done correctly
+                                    let received_nonce = if data.d.is_u64() {
+                                        data.d.as_u64().unwrap()
+                                    } else {
+                                        data.d.as_str().unwrap().parse::<u64>().unwrap_or(0)
+                                    };
+
+                                    if *nonce != received_nonce {
                                         error!("Heartbeat nonce values didn't match!");
                                     }
                                 }
@@ -172,7 +208,7 @@ pub mod websocket {
                             IncomingWebsocketMessage::OpCode8(data) => {
                                 debug!("Websocket heartbeat interval: {}", data.heartbeat_interval);
 
-                                task::spawn(async move {
+                                let _ = heartbeat_task.lock().await.insert(task::spawn(async move {
                                     let nonce_arc = nonce_arc.clone();
                                     let ws_write = ws_write.clone();
                                     let mut is_first = true;
@@ -189,7 +225,7 @@ pub mod websocket {
                                         debug!("Sent websocket heartbeat");
                                         is_first = false;
                                     }
-                                });
+                                }));
                             }
                             IncomingWebsocketMessage::OpCode15(_) => {
                                 let prev = op15_count.fetch_add(1, Ordering::SeqCst);
@@ -241,7 +277,7 @@ pub mod websocket {
                 }
             }
 
-            Ok(Self { task: Some(task) })
+            Ok(Self { task: Some(task), heartbeat_task })
         }
 
 
@@ -277,9 +313,9 @@ pub mod websocket {
 
         #[tracing::instrument]
         pub async fn send_heartbeat(write: &mut WebSocketWrite) -> Result<u64, async_tungstenite::tungstenite::Error> {
-            let nonce = rand::random();
+            let nonce: u64 = rand::random();
             let ws_message = OutgoingWebsocketMessage::OpCode3(OpCode3_6 {
-                d: nonce,
+                d: Value::Number(Number::from(nonce)),
             }).to_json();
 
             trace!("[HEARTBEAT] {}", ws_message);

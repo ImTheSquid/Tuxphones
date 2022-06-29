@@ -28,7 +28,7 @@ pub struct CommandProcessor {
 }
 
 impl CommandProcessor {
-    pub fn new(receiver: mpsc::Receiver<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
+    pub fn new(receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
         let thread = thread::spawn(move || {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
@@ -101,7 +101,8 @@ impl CommandProcessor {
                                     server_id,
                                     session_id,
                                     token,
-                                    user_id
+                                    user_id,
+                                    ws_sender.clone()
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
@@ -109,45 +110,10 @@ impl CommandProcessor {
                                         continue;
                                     }
                                 };
-                                /*{
-                                    let ws = ws.as_ref().unwrap().clone();
-                                    task::block_on(async {
-                                        ws.lock().await.auth(server_id, session_id, token, user_id).await
-                                    }).expect("TODO: handle parse error");
-                                }*/
-
-                                //todo!("Implement GStreamer with new params");
-                                /*gstreamer = match GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings { nvidia_encoder }),
-                                    xid.into(),
-                                    resolution,
-                                    frame_rate.into(),
-                                    audio_ssrc,
-                                    video_ssrc,
-                                    rtx_ssrc,
-                                    &format!("{}:{}", ip, port),
-                                    EncryptionAlgorithm::aead_aes256_gcm,
-                                    key
-                                ) {
-                                    Ok(handle) => Some(handle),
-                                    Err(e) => {
-                                        error!("GStreamer error: {}", e);
-                                        run.store(false, Ordering::SeqCst);
-                                        continue;
-                                    },
-                                };
-
-                                match gstreamer.as_ref().unwrap().start() {
-                                    Ok(_) => {},
-                                    Err(e) => {
-                                        error!("GStreamer startup error: {}", e);
-                                        continue;
-                                    }
-                                }*/
 
                                 info!("[StartStream] Command processed (stream started)");
                             },
-                            SocketListenerCommand::StopStream => {
+                            SocketListenerCommand::StopStream | SocketListenerCommand::StopStreamInternal => {
                                 info!("[StopStream] Command received");
 
                                 // Kill gstreamer and ws
@@ -157,6 +123,13 @@ impl CommandProcessor {
                                 pulse.teardown_audio_capture();
 
                                 info!("[StopStream] Command processed (stream stopped)");
+
+                                // If stream was stopped internally, send a notification to the client
+                                if cmd == SocketListenerCommand::StopStreamInternal {
+                                    if let Err(e) = socket::send::stream_stop_internal() {
+                                        error!("Failed to notify client of internal stream stop: {e}");
+                                    }
+                                }
                             },
                             SocketListenerCommand::GetInfo { xids } => {
                                 info!("[GetInfo] Command received");
