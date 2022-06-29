@@ -91,11 +91,8 @@ impl Drop for GstHandle {
     fn drop(&mut self) {
         let mut handles_count = HANDLES_COUNT.lock().unwrap();
 
-        match self.pipeline.set_state(gst::State::Null) {
-            Err(e) => {
-                error!("Failed to stop pipeline: {:?}", e);
-            }
-            _ => {}
+        if let Err(e) = self.pipeline.set_state(gst::State::Null) {
+            error!("Failed to stop pipeline: {:?}", e);
         };
 
         //Gst should be destroyed only when there are no more handles
