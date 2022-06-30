@@ -297,9 +297,10 @@ impl PulseHandle {
 
         if !tux_combined_sink_found {
             let ml_ref = Rc::clone(&self.mainloop);
+            // adjust_time=0 prevents a crash for some reason
             let op = self.context.borrow_mut().introspect().load_module(
                 "module-combine-sink", 
-                &format!("sink_name=tuxphones-combined sink_properties=device.description=tuxphones-combined slaves=tuxphones,{}", passthrough_sink), 
+                &format!("sink_name=tuxphones-combined sink_properties=device.description=tuxphones-combined adjust_time=0 slaves=tuxphones,{}", passthrough_sink), 
                 move |_| unsafe {
                     (*ml_ref.as_ptr()).signal(false);
                 }

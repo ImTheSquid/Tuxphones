@@ -26,7 +26,7 @@ pub mod websocket {
     use crate::xid;
 
     const API_VERSION: u8 = 7;
-    const MAX_BITRATE: u32 = 80000000;
+    const MAX_BITRATE: u32 = 1_000_000;
 
     lazy_static! {
         static ref OPCODE_REGEX: Regex = Regex::new(r#""op":(?P<op>\d+)"#).unwrap();
@@ -43,7 +43,7 @@ pub mod websocket {
     impl Drop for WebsocketConnection {
         fn drop(&mut self) {
             info!("Closing websocket connection");
-            
+
             let heartbeat_task = self.heartbeat_task.clone();
             task::spawn(async move {
                 if let Some(task) = heartbeat_task.lock().await.take() {
@@ -237,7 +237,7 @@ pub mod websocket {
                                     } else { false };
 
                                     let gst = GstHandle::new(
-                                        VideoEncoderType::H264(H264Settings {nvidia_encoder}), 
+                                        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 
                                         xid, 
                                         max_resolution.clone(), 
                                         max_framerate.into(), 
