@@ -133,20 +133,20 @@ impl GstHandle {
         let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
+        /*
         let width = resolution.width as u32;
         let height = resolution.height as u32;
         if resolution.is_fixed {
             caps_options.push(("width", &width));
             caps_options.push(("height", &height));
         };
+         */
 
-        /*
+
         capsfilter.set_property("caps", &gst::Caps::new_simple(
             "video/x-raw",
             caps_options.as_ref()
         ));
-
-         */
 
         ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
@@ -216,12 +216,10 @@ impl GstHandle {
         srtpenc.set_property_from_str("rtcp-cipher", encryption_algorithm.to_gst_str());
         srtpenc.set_property("key", gst::Buffer::from_slice(key));
         srtpenc.add_pad(&gst::GhostPad::new(Some("src"), gst::PadDirection::Src))?;
-        let srtp_src = srtpenc.static_pad("src").unwrap();
 
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         webrtcbin.add_pad(&gst::GhostPad::new(Some("sink"), gst::PadDirection::Sink))?;
-        let webrtcbin_sink = webrtcbin.static_pad("sink").unwrap();
 
         let mut sdp = SDPMessage::new();
         sdp.set_connection("IN", "IP4", discord_address, 1, 1);
@@ -245,11 +243,8 @@ impl GstHandle {
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
 
-        //Link rtpmux with the encoder
-        Element::link(&rtpmux, &srtpenc)?;
-
-        //Link webrtcbin sink with the rtpmux src
-        gst::Pad::link(&srtp_src, &webrtcbin_sink)?;
+        rtpmux.link(&srtpenc)?;
+        srtpenc.link(&webrtcbin)?;
 
         //Link encoderpay to rtpmux video sink
         gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
