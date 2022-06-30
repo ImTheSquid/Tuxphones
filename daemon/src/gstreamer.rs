@@ -1,11 +1,11 @@
 use std::sync::Mutex;
 
-use gst::{Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
+use gst::{Element, glib, PadLinkError, StateChangeError, StateChangeSuccess, debug_bin_to_dot_data, DebugGraphDetails};
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::{error, debug};
+use tracing::error;
 
 use crate::{receive::StreamResolutionInformation, xid};
 
@@ -232,26 +232,34 @@ impl GstHandle {
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
-
-        //Link encoderpay to rtpmux video sink
-        gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
-        //Link rtpopuspay to rtpmux audio sink
-        gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
-
         //Add elements to the pipeline
         pipeline.add_many(&[
             &ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay,
             &pulsesrc, &audioconvert, &opusenc, &rtpopuspay,
             &rtpmux, &srtpenc,
             &webrtcbin])?;
+
         //Link video elements
         Element::link_many(&[&ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
+
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
+
         //Link rtpmux with the encoder
         Element::link(&rtpmux, &srtpenc)?;
+
         //Link webrtcbin sink with the rtpmux src
         gst::Pad::link(&srtp_src, &webrtcbin_sink)?;
+
+        //Link encoderpay to rtpmux video sink
+        gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
+
+        //Link rtpopuspay to rtpmux audio sink
+        gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
+
+        // Debug diagram
+        let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
+        std::fs::write("/tmp/gst.dot", out.as_str()).unwrap();
 
         Ok(GstHandle {
             pipeline,
