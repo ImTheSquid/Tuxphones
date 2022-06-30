@@ -113,7 +113,12 @@ impl GstHandle {
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
         discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
     ) -> Result<Self, GstInitializationError> {
+        //TODO: Send all logs to tracing and filter from there instead of using gstreamer filter
+        //gst::debug_set_default_threshold(gst::DebugLevel::Count);
+        tracing_gstreamer::integrate_events();
+        gst::debug_remove_default_log_function();
         gst::init()?;
+        tracing_gstreamer::integrate_spans();
         *HANDLES_COUNT.lock().unwrap() += 1;
 
         //Create a new GStreamer pipeline
