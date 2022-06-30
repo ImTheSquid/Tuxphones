@@ -1,6 +1,7 @@
 pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
+    use serde_json::Value;
     use crate::{EncryptionAlgorithm, receive::StreamResolutionInformation};
 
     lazy_static! {
@@ -171,8 +172,8 @@ pub mod opcodes {
     /// Heartbeat message
     #[derive(serde::Serialize, serde::Deserialize, Debug)]
     pub struct OpCode3_6 {
-        /// Random nonce
-        pub d: u64,
+        /// Random nonce, could be a String or u64
+        pub d: Value,
     }
 
     #[derive(serde::Deserialize, Debug)]

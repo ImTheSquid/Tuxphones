@@ -21,7 +21,7 @@ pub mod receive {
     }
 
     /// Holds information relating to stream resolution
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
         pub width: u16,
@@ -31,7 +31,7 @@ pub mod receive {
     }
 
     /// Commands that can be received from the client plugin
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
         /// Starts a new soundshare stream
@@ -61,6 +61,8 @@ pub mod receive {
         },
         /// Stops the currently-running stream
         StopStream,
+        /// Internal stop stream command, notifies client plugin
+        StopStreamInternal,
         /// Gets info on which windows can have sound captured
         GetInfo { 
             /// XIDs available to Discord
@@ -165,6 +167,10 @@ pub mod send {
         pub xid: xid
     }
 
+    #[derive(Serialize, Debug)]
+    #[serde(tag = "type")]
+    pub struct StreamStop {}
+
     pub enum SocketError {
         ConnectionFailed,
         NoRuntimeDir,
@@ -227,8 +233,10 @@ pub mod send {
     }
 
     pub fn application_info(apps: &Vec<Application>) -> Result<(), SocketError> {
-        write_socket(&ApplicationList { apps })?;
+        write_socket(&ApplicationList { apps })
+    }
 
-        Ok(())
+    pub fn stream_stop_internal() -> Result<(), SocketError> {
+        write_socket(&StreamStop {})
     }
 }

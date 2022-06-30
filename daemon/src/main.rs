@@ -48,7 +48,7 @@ fn main() {
         }
     };
 
-    let mut command_processor = CommandProcessor::new(receiver, Arc::clone(&run), Duration::from_millis(500));
+    let mut command_processor = CommandProcessor::new(receiver, sender.clone(), Arc::clone(&run), Duration::from_millis(500));
 
     info!("Daemon started");
 

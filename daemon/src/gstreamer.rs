@@ -5,7 +5,7 @@ use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::error;
+use tracing::{error, debug};
 
 use crate::{receive::StreamResolutionInformation, xid};
 
@@ -190,7 +190,7 @@ impl GstHandle {
         //Create a new pulsesrc to get audio from the PulseAudio server
         let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
-        pulsesrc.set_property_from_str("device", "tuxphones");
+        pulsesrc.set_property_from_str("device", "tuxphones.monitor");
 
         //Create a new audioconvert to allow encoding of the raw audio
         let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
