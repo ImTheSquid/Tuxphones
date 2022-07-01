@@ -129,6 +129,8 @@ impl GstHandle {
         //Create a new ximagesrc to get video from the X server
         let ximagesrc = gst::ElementFactory::make("ximagesrc", None)?;
 
+        let videoscale = gst::ElementFactory::make("videoscale", None)?;
+
         //Creating a capsfilter to set the resolution and the fps
         let capsfilter = gst::ElementFactory::make("capsfilter", None)?;
 
@@ -138,14 +140,12 @@ impl GstHandle {
         let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
-        /*
-        let width = resolution.width as u32;
-        let height = resolution.height as u32;
+        let width = resolution.width as i32;
+        let height = resolution.height as i32;
         if resolution.is_fixed {
             caps_options.push(("width", &width));
             caps_options.push(("height", &height));
         };
-         */
 
 
         capsfilter.set_property("caps", &gst::Caps::new_simple(
@@ -237,19 +237,20 @@ impl GstHandle {
 
         //Add elements to the pipeline
         pipeline.add_many(&[
-            &ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay,
+            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
             &pulsesrc, &audioconvert, &opusenc, &rtpopuspay,
             &rtpmux, &srtpenc,
             &webrtcbin])?;
 
         //Link video elements
-        Element::link_many(&[&ximagesrc, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
 
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
 
         rtpmux.link(&srtpenc)?;
         srtpenc.link(&webrtcbin)?;
+        //gst::Pad::link(&srtpenc.static_pad("rtp_src_0").unwrap(), &webrtcbin.static_pad("sink").unwrap())?;
 
         //Link encoderpay to rtpmux video sink
         gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
