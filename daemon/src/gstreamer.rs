@@ -192,6 +192,17 @@ impl GstHandle {
 
         //--AUDIO--
 
+        // Caps filter for audio from conversion to encoding
+        let audio_capsfilter = gst::ElementFactory::make("capsfilter", None)?;
+
+        //Create a vector containing the option of the gst caps
+        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("channels", &2), ("rate", &48000)];
+
+        audio_capsfilter.set_property("caps", &gst::Caps::new_simple(
+            "audio/x-raw",
+            caps_options.as_ref()
+        ));
+
         //Create a new pulsesrc to get audio from the PulseAudio server
         let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
@@ -238,7 +249,7 @@ impl GstHandle {
         //Add elements to the pipeline
         pipeline.add_many(&[
             &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
-            &pulsesrc, &audioconvert, &opusenc, &rtpopuspay,
+            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay,
             &rtpmux, &srtpenc,
             &webrtcbin])?;
 
@@ -246,7 +257,7 @@ impl GstHandle {
         Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &opusenc, &rtpopuspay])?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay])?;
 
         rtpmux.link(&srtpenc)?;
         srtpenc.link(&webrtcbin)?;
