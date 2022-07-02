@@ -95,7 +95,6 @@ pub mod websocket {
 
             let op15_count = Arc::new(AtomicUsize::new(0));
             let nonce = Arc::new(Mutex::new(None));
-            let sdp = Arc::new(Mutex::new(None));
 
             let heartbeat_task = Arc::new(Mutex::new(None));
 
@@ -109,7 +108,6 @@ pub mod websocket {
                     let video_ssrc_arc = video_ssrc.clone();
                     let rtx_ssrc_arc = rtx_ssrc.clone();
                     let ws_write = ws_write.clone();
-                    let sdp = sdp.clone();
                     let command_sender = command_sender.clone();
                     let heartbeat_task = heartbeat_task.clone();
 
@@ -189,7 +187,22 @@ pub mod websocket {
                                 ).await.expect("Failed to send stream information");
                             }
                             IncomingWebsocketMessage::OpCode4(data) => {
-                                let _ = sdp.lock().await.insert(data.sdp);
+                                // Quick and drity check to try to detect Nvidia drivers
+                                let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                    String::from_utf8_lossy(&out.stdout).contains("nvidia")
+                                } else { false };
+
+                                let gst = GstHandle::new(
+                                    VideoEncoderType::H264(H264Settings {nvidia_encoder}),
+                                    xid,
+                                    max_resolution.clone(),
+                                    max_framerate.into(),
+                                    data.sdp.replace("\n", "\n\r")
+                                ).expect("Failed to start gstreamer");
+
+                                gst.start().expect("Failed to start stream");
+
+                                let _ = stream_arc.lock().await.insert(gst);
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
                                 if let Some(nonce) = nonce_arc.lock().await.as_ref() {
@@ -228,31 +241,8 @@ pub mod websocket {
                                 }));
                             }
                             IncomingWebsocketMessage::OpCode15(_) => {
-                                let prev = op15_count.fetch_add(1, Ordering::SeqCst);
-                                // Expect 3 op 15's
-                                if prev == 2 {
-                                    // Quick and drity check to try to detect Nvidia drivers
-                                    /*let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
-                                        String::from_utf8_lossy(&out.stdout).contains("nvidia")
-                                    } else { false };
-
-                                    let gst = GstHandle::new(
-                                        VideoEncoderType::H264(H264Settings {nvidia_encoder: false}), 
-                                        xid, 
-                                        max_resolution.clone(), 
-                                        max_framerate.into(), 
-                                        audio_ssrc_arc.lock().await.unwrap(), 
-                                        video_ssrc_arc.lock().await.unwrap(), 
-                                        rtx_ssrc_arc.lock().await.unwrap(), 
-                                        &endpoint, 
-                                        EncryptionAlgorithm::aead_aes256_gcm, 
-                                        sdp.lock().await.take().unwrap()
-                                    ).expect("Failed to start gstreamer");
-
-                                    gst.start().expect("Failed to start stream");
-
-                                    let _ = stream_arc.lock().await.insert(gst);*/
-                                }
+                                //TODO: Check if this is still needed
+                                let _ = op15_count.fetch_add(1, Ordering::SeqCst);
                             }
                             IncomingWebsocketMessage::OpCode16(data) => {
                                 debug!("Received version information:");

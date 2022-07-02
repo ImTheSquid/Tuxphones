@@ -5,7 +5,7 @@ use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::error;
+use tracing::{error, trace};
 
 use crate::{receive::StreamResolutionInformation, xid};
 
@@ -112,10 +112,11 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
+    /// # Arguments
+    /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
-        audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
-        discord_address: &str
+        sdp: String,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
@@ -186,8 +187,6 @@ impl GstHandle {
             }
         };
 
-        encoder_pay.set_property("ssrc", video_ssrc);
-
 
         //--AUDIO--
 
@@ -213,29 +212,19 @@ impl GstHandle {
         let opusenc = gst::ElementFactory::make("opusenc", None)?;
         //Opus encapsulator for rtp
         let rtpopuspay = gst::ElementFactory::make("rtpopuspay", None)?;
-        rtpopuspay.set_property("ssrc", audio_ssrc);
+        //rtpopuspay.set_property("ssrc", audio_ssrc);
 
 
         //--DESTINATION--
 
-        //mux
-        let rtpmux = gst::ElementFactory::make("rtpmux", None)?;
-        rtpmux.set_property("ssrc", rtx_ssrc);
-        rtpmux.add_pad(&gst::GhostPad::new(Some("vsink"), gst::PadDirection::Sink))?;
-        rtpmux.add_pad(&gst::GhostPad::new(Some("asink"), gst::PadDirection::Sink))?;
-        let video_sink = rtpmux.static_pad("vsink").unwrap();
-        let audio_sink = rtpmux.static_pad("asink").unwrap();
-
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
-        webrtcbin.add_pad(&gst::GhostPad::new(Some("sink"), gst::PadDirection::Sink))?;
 
-        let mut sdp = SDPMessage::new();
-        sdp.set_connection("IN", "IP4", discord_address, 1, 1);
-
+        let mut sdp_message = SDPMessage::new();
+        sdp_message.set_uri(&sdp);
         let webrtc_desc = WebRTCSessionDescription::new(
             WebRTCSDPType::Offer,
-            sdp
+            sdp_message
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
@@ -243,23 +232,13 @@ impl GstHandle {
         pipeline.add_many(&[
             &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
             &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay,
-            &rtpmux,
             &webrtcbin])?;
 
         //Link video elements
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay])?;
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay])?;
-
-        rtpmux.link(&webrtcbin)?;
-        //gst::Pad::link(&srtpenc.static_pad("rtp_src_0").unwrap(), &webrtcbin.static_pad("sink").unwrap())?;
-
-        //Link encoderpay to rtpmux video sink
-        gst::Pad::link(&encoder_pay.static_pad("src").unwrap(), &video_sink)?;
-
-        //Link rtpopuspay to rtpmux audio sink
-        gst::Pad::link(&rtpopuspay.static_pad("src").unwrap(), &audio_sink)?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay, &webrtcbin])?;
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
