@@ -91,6 +91,10 @@ impl Drop for GstHandle {
     fn drop(&mut self) {
         let mut handles_count = HANDLES_COUNT.lock().unwrap();
 
+        // Debug diagram
+        let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
+        std::fs::write("/tmp/gstdrop.dot", out.as_str()).unwrap();
+
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
             error!("Failed to stop pipeline: {:?}", e);
         };
