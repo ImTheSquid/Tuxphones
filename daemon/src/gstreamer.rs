@@ -212,7 +212,6 @@ impl GstHandle {
         let opusenc = gst::ElementFactory::make("opusenc", None)?;
         //Opus encapsulator for rtp
         let rtpopuspay = gst::ElementFactory::make("rtpopuspay", None)?;
-        //rtpopuspay.set_property("ssrc", audio_ssrc);
 
 
         //--DESTINATION--
