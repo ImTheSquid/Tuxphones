@@ -115,7 +115,7 @@ impl GstHandle {
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
         audio_ssrc: u32, video_ssrc: u32, rtx_ssrc: u32,
-        discord_address: &str, encryption_algorithm: EncryptionAlgorithm, key: Vec<u8>
+        discord_address: &str
     ) -> Result<Self, GstInitializationError> {
         //TODO: Send all logs to tracing and filter from there instead of using gstreamer filter
         //gst::debug_set_default_threshold(gst::DebugLevel::Count);
@@ -231,12 +231,6 @@ impl GstHandle {
         let video_sink = rtpmux.static_pad("vsink").unwrap();
         let audio_sink = rtpmux.static_pad("asink").unwrap();
 
-        //encryption
-        let srtpenc = gst::ElementFactory::make("srtpenc", None)?;
-        srtpenc.set_property_from_str("rtcp-cipher", encryption_algorithm.to_gst_str());
-        srtpenc.set_property("key", gst::Buffer::from_slice(key));
-        srtpenc.add_pad(&gst::GhostPad::new(Some("src"), gst::PadDirection::Src))?;
-
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         webrtcbin.add_pad(&gst::GhostPad::new(Some("sink"), gst::PadDirection::Sink))?;
@@ -254,7 +248,7 @@ impl GstHandle {
         pipeline.add_many(&[
             &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
             &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay,
-            &rtpmux, &srtpenc,
+            &rtpmux,
             &webrtcbin])?;
 
         //Link video elements
@@ -263,8 +257,7 @@ impl GstHandle {
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay])?;
 
-        rtpmux.link(&srtpenc)?;
-        srtpenc.link(&webrtcbin)?;
+        rtpmux.link(&webrtcbin)?;
         //gst::Pad::link(&srtpenc.static_pad("rtp_src_0").unwrap(), &webrtcbin.static_pad("sink").unwrap())?;
 
         //Link encoderpay to rtpmux video sink

@@ -143,17 +143,11 @@ pub mod opcodes {
     /// Outgoing message containing info about the stream
     #[derive(serde::Serialize, Debug)]
     pub struct OpCode1 {
-        /// My public ip address obtainable with an UDP IP discovery message
-        pub address: String,
-        /// My public port obtainable with an UDP IP discovery message
-        pub port: u16,
-        pub experiments: Vec<String>,
-        /// Encryption algorithm to use
-        pub mode: EncryptionAlgorithm,
         pub protocol: String,
         pub rtc_connection_id: String,
         pub codecs: Vec<GatewayCodec>,
-        pub data: OpCode1Data,
+        pub data: String,
+        pub sdp: String
     }
 
     /// Incoming message containing configuration options for webrtc connection
@@ -188,9 +182,7 @@ pub mod opcodes {
         pub audio_codec: AudioCodec,
         /// Unknown value
         pub media_session_id: String,
-        #[serde(rename = "mode")]
-        pub encryption_mode: String,
-        pub secret_key: Vec<u8>,
+        pub sdp: String,
         pub video_codec: String
     }
 

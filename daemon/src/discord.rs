@@ -85,7 +85,7 @@ pub mod websocket {
 
             let (ws_write, ws_read) = ws_stream.split();
 
-            let stream = Arc::new(Mutex::new(None));
+            let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
 
             let ws_write = Arc::new(Mutex::new(ws_write));
 
@@ -95,7 +95,7 @@ pub mod websocket {
 
             let op15_count = Arc::new(AtomicUsize::new(0));
             let nonce = Arc::new(Mutex::new(None));
-            let secret_key = Arc::new(Mutex::new(None));
+            let sdp = Arc::new(Mutex::new(None));
 
             let heartbeat_task = Arc::new(Mutex::new(None));
 
@@ -109,7 +109,7 @@ pub mod websocket {
                     let video_ssrc_arc = video_ssrc.clone();
                     let rtx_ssrc_arc = rtx_ssrc.clone();
                     let ws_write = ws_write.clone();
-                    let secret_key = secret_key.clone();
+                    let sdp = sdp.clone();
                     let command_sender = command_sender.clone();
                     let heartbeat_task = heartbeat_task.clone();
 
@@ -189,7 +189,7 @@ pub mod websocket {
                                 ).await.expect("Failed to send stream information");
                             }
                             IncomingWebsocketMessage::OpCode4(data) => {
-                                let _ = secret_key.lock().await.insert(data.secret_key);
+                                let _ = sdp.lock().await.insert(data.sdp);
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
                                 if let Some(nonce) = nonce_arc.lock().await.as_ref() {
@@ -232,7 +232,7 @@ pub mod websocket {
                                 // Expect 3 op 15's
                                 if prev == 2 {
                                     // Quick and drity check to try to detect Nvidia drivers
-                                    let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                    /*let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
                                         String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                     } else { false };
 
@@ -246,12 +246,12 @@ pub mod websocket {
                                         rtx_ssrc_arc.lock().await.unwrap(), 
                                         &endpoint, 
                                         EncryptionAlgorithm::aead_aes256_gcm, 
-                                        secret_key.lock().await.take().unwrap()
+                                        sdp.lock().await.take().unwrap()
                                     ).expect("Failed to start gstreamer");
 
                                     gst.start().expect("Failed to start stream");
 
-                                    let _ = stream_arc.lock().await.insert(gst);
+                                    let _ = stream_arc.lock().await.insert(gst);*/
                                 }
                             }
                             IncomingWebsocketMessage::OpCode16(data) => {
@@ -383,12 +383,12 @@ pub mod websocket {
                 false
             ).await?;
 
+            let username = "tuxphones";
+            let password = "asedtrqewrytwq435r";
+            let data = format!("a=extmap-allow-mixed\na=ice-ufrag:{username}\na=ice-pwd:{password}\na=ice-options:trickle\na=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\na=rtpmap:111 opus/48000/2\na=extmap:14 urn:ietf:params:rtp-hdrext:toffset\na=extmap:13 urn:3gpp:video-orientation\na=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\na=extmap:6 http://www.webrtc.org/experiments/rtp-hdrext/video-content-type\na=extmap:7 http://www.webrtc.org/experiments/rtp-hdrext/video-timing\na=extmap:8 http://www.webrtc.org/experiments/rtp-hdrext/color-space\na=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\na=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\na=rtpmap:96 VP8/90000\na=rtpmap:97 rtx/90000");
+
             let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 { 
-                address: ip.clone(), 
-                port, 
-                experiments: vec![], 
-                mode: EncryptionAlgorithm::aead_aes256_gcm, 
-                protocol: "udp".to_string(), 
+                protocol: "webrtc".to_string(), 
                 rtc_connection_id, 
                 codecs: vec![
                     GatewayCodec {
@@ -406,11 +406,8 @@ pub mod websocket {
                         rtx_payload_type: None
                     }
                 ], 
-                data: OpCode1Data { 
-                    address: ip, 
-                    mode: EncryptionAlgorithm::aead_aes256_gcm, 
-                    port
-                }
+                data: data.clone(),
+                sdp: data
             }).to_json();
 
             trace!("[STREAM] {ws1}");
