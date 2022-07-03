@@ -1,14 +1,12 @@
 use std::sync::Mutex;
 
+use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
-use gst::event::Caps;
-use gst::ffi::GstCaps;
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
-use gst_webrtc::{WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
-use gst_webrtc::ffi::GstWebRTCRTPTransceiver;
+use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::{error, info, trace};
+use tracing::{debug, error};
 
 use crate::{receive::StreamResolutionInformation, xid};
 
@@ -22,6 +20,7 @@ pub enum GstInitializationError {
     Pad(PadLinkError),
 }
 
+#[derive(Debug)]
 pub struct StreamSSRCs {
     pub audio: u32,
     pub video: u32,
@@ -228,10 +227,21 @@ impl GstHandle {
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
 
-        //TODO: get the ssrcs from the SDP message
-        webrtcbin.connect("on-new-transceiver", false, |value| {
-            let transcriver = value[1].get::<WebRTCRTPTransceiver>().unwrap();
-            trace!("New transceiver: {:?}", transcriver);
+        //TODO: Put listener in a mutex to be able to disconnect it from inside the closure
+        let listener = webrtcbin.connect("on-negotiation-needed", true, move |value| {
+            let webrtcbin = value[0].get::<Element>().unwrap();
+            //trace!("New transceiver: {:?}", transcriver);
+            let video_pad = webrtcbin.static_pad("sink_0").unwrap();
+            let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
+            debug!("WebRTC negotiation finished, sending ssrcs");
+
+            let _ = task::block_on(tx.send(StreamSSRCs {
+                audio: get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap(),
+                video: get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap(),
+                rtx: 0,
+            }));
+
+            //webrtcbin.disconnect(listener);
             None
         });
 
@@ -268,5 +278,12 @@ impl GstHandle {
 
     pub fn start(&self) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)
+    }
+}
+
+pub fn get_cap_value_from_str<'l, T: glib::value::FromValue<'l>>(caps: &'l gst::Caps, value: &str) -> Option<T> {
+    match caps.structure(0).unwrap().get::<T>(value) {
+        Ok(value) => Some(value),
+        Err(_) => None,
     }
 }
