@@ -230,7 +230,6 @@ impl GstHandle {
         //TODO: Put listener in a mutex to be able to disconnect it from inside the closure
         let listener = webrtcbin.connect("on-negotiation-needed", true, move |value| {
             let webrtcbin = value[0].get::<Element>().unwrap();
-            //trace!("New transceiver: {:?}", transcriver);
             let video_pad = webrtcbin.static_pad("sink_0").unwrap();
             let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
             debug!("WebRTC negotiation finished, sending ssrcs");
@@ -253,17 +252,26 @@ impl GstHandle {
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
+
+        //queues
+        let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
+        let audio_encoder_queue = gst::ElementFactory::make("queue", None)?;
+        let video_webrtc_queue = gst::ElementFactory::make("queue", None)?;
+        let audio_webrtc_queue = gst::ElementFactory::make("queue", None)?;
+
         //Add elements to the pipeline
         pipeline.add_many(&[
             &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
+            &video_encoder_queue, &video_webrtc_queue,
             &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay,
+            &audio_encoder_queue, &audio_webrtc_queue,
             &webrtcbin])?;
 
         //Link video elements
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay, &webrtcbin])?;
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_webrtc_queue, &webrtcbin])?;
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay, &webrtcbin])?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, &audio_webrtc_queue, &webrtcbin])?;
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
