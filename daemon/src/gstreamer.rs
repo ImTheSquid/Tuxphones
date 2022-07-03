@@ -247,7 +247,7 @@ impl GstHandle {
         let mut sdp_message = SDPMessage::new();
         sdp_message.set_uri(&sdp);
         let webrtc_desc = WebRTCSessionDescription::new(
-            WebRTCSDPType::Offer,
+            WebRTCSDPType::Answer,
             sdp_message,
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
