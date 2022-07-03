@@ -12,7 +12,7 @@ Discord screensharing audio for Linux.
 - All GStreamer Dev Libraries
 
 ### Manual
-Run:
+Clone the repository then run:
 ```
 ./install.sh
 ```
