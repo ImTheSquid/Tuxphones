@@ -192,9 +192,9 @@ pub mod websocket {
                                     String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                 } else { false };
 
-
                                 task::spawn({
                                     let stream_arc = stream_arc.clone();
+                                    let ws_write = ws_write.clone();
                                     async move {
                                         let (tx, rx): (channel::Sender<StreamSSRCs>, channel::Receiver<StreamSSRCs>) = channel::unbounded();
 
@@ -210,8 +210,16 @@ pub mod websocket {
 
                                         let _ = stream_arc.lock().await.insert(gst);
 
-                                        //TODO: Send them in a 12 opcode message
-                                        //let stream_ssrcs = rx.recv().await.unwrap();
+                                        let stream_ssrcs = rx.recv().await.unwrap();
+                                        Self::send_partial_stream_information(
+                                            ws_write.lock().await.borrow_mut(), 
+                                            stream_ssrcs.audio, 
+                                            stream_ssrcs.rtx, 
+                                            stream_ssrcs.video, 
+                                            GatewayResolution::from_socket_info(max_resolution), 
+                                            max_framerate, 
+                                            true
+                                        ).await.expect("Failed to send stream information");
                                     }
                                 });
                             }
@@ -426,7 +434,7 @@ pub mod websocket {
                 false
             ).await?;
 
-            Self::send_partial_stream_information(
+            /*Self::send_partial_stream_information(
                 write,
                 audio_ssrc,
                 rtx_ssrc,
@@ -434,7 +442,7 @@ pub mod websocket {
                 max_resolution,
                 max_framerate,
                 true
-            ).await?;
+            ).await?;*/
 
             Ok(())
         }
