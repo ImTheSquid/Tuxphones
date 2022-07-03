@@ -7,7 +7,7 @@ pub mod websocket {
     use std::time::Duration;
 
     use async_std::task::JoinHandle;
-    use async_std::{task};
+    use async_std::{channel, task};
     use async_std::sync::Mutex;
     use async_tungstenite::async_std::{connect_async, ConnectStream};
     use async_tungstenite::tungstenite::Message;
@@ -21,7 +21,7 @@ pub mod websocket {
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
-    use crate::gstreamer::{EncryptionAlgorithm, GstHandle, VideoEncoderType, H264Settings};
+    use crate::gstreamer::{EncryptionAlgorithm, GstHandle, VideoEncoderType, H264Settings, StreamSSRCs};
     use crate::receive::{StreamResolutionInformation, SocketListenerCommand};
     use crate::xid;
 
@@ -175,14 +175,14 @@ pub mod websocket {
 
                                 Self::send_stream_information(
                                     ws_write.lock().await.borrow_mut(),
-                                    audio_ssrc, 
-                                    rtx_ssrc, 
+                                    audio_ssrc,
+                                    rtx_ssrc,
                                     video_ssrc,
-                                    GatewayResolution::from_socket_info(max_resolution), 
-                                    max_framerate, 
-                                    data.port, 
-                                    rtc_connection_id, 
-                                    endpoint.clone(), 
+                                    GatewayResolution::from_socket_info(max_resolution),
+                                    max_framerate,
+                                    data.port,
+                                    rtc_connection_id,
+                                    endpoint.clone(),
                                     ip
                                 ).await.expect("Failed to send stream information");
                             }
@@ -192,17 +192,28 @@ pub mod websocket {
                                     String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                 } else { false };
 
-                                let gst = GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings {nvidia_encoder}),
-                                    xid,
-                                    max_resolution.clone(),
-                                    max_framerate.into(),
-                                    data.sdp.replace("\n", "\n\r")
-                                ).expect("Failed to start gstreamer");
 
-                                gst.start().expect("Failed to start stream");
+                                task::spawn({
+                                    let stream_arc = stream_arc.clone();
+                                    async move {
+                                        let (tx, rx): (channel::Sender<StreamSSRCs>, channel::Receiver<StreamSSRCs>) = channel::unbounded();
 
-                                let _ = stream_arc.lock().await.insert(gst);
+                                        let gst = GstHandle::new(
+                                            VideoEncoderType::H264(H264Settings { nvidia_encoder }),
+                                            xid,
+                                            max_resolution.clone(),
+                                            max_framerate.into(),
+                                            data.sdp.replace("\n", "\n\r"),
+                                            tx
+                                        ).expect("Failed to start gstreamer");
+                                        gst.start().expect("Failed to start stream");
+
+                                        let _ = stream_arc.lock().await.insert(gst);
+
+                                        //TODO: Send them in a 12 opcode message
+                                        //let stream_ssrcs = rx.recv().await.unwrap();
+                                    }
+                                });
                             }
                             IncomingWebsocketMessage::OpCode6(data) => {
                                 if let Some(nonce) = nonce_arc.lock().await.as_ref() {
@@ -260,7 +271,7 @@ pub mod websocket {
             match task::block_on(async move {
                 Self::auth(ws_write.clone().lock().await.borrow_mut(), server_id, session_id, token, user_id).await
             }) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     task.cancel().await;
                     return Err(e);
@@ -352,9 +363,9 @@ pub mod websocket {
 
         #[tracing::instrument]
         async fn send_stream_information(
-            write: &mut WebSocketWrite, 
-            audio_ssrc: u32, 
-            rtx_ssrc: u32, 
+            write: &mut WebSocketWrite,
+            audio_ssrc: u32,
+            rtx_ssrc: u32,
             video_ssrc: u32,
             max_resolution: GatewayResolution,
             max_framerate: u8,

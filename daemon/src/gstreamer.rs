@@ -1,11 +1,14 @@
 use std::sync::Mutex;
 
-use gst::{Element, glib, PadLinkError, StateChangeError, StateChangeSuccess, debug_bin_to_dot_data, DebugGraphDetails};
+use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
+use gst::event::Caps;
+use gst::ffi::GstCaps;
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
-use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::ffi::GstWebRTCRTPTransceiver;
 use once_cell::sync::Lazy;
-use tracing::{error, trace};
+use tracing::{error, info, trace};
 
 use crate::{receive::StreamResolutionInformation, xid};
 
@@ -17,6 +20,12 @@ pub enum GstInitializationError {
     Init(glib::Error),
     Element(glib::BoolError),
     Pad(PadLinkError),
+}
+
+pub struct StreamSSRCs {
+    pub audio: u32,
+    pub video: u32,
+    pub rtx: u32,
 }
 
 impl std::fmt::Display for GstInitializationError {
@@ -116,7 +125,7 @@ impl GstHandle {
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
-        sdp: String,
+        sdp: String, tx: async_std::channel::Sender<StreamSSRCs>,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
@@ -150,7 +159,7 @@ impl GstHandle {
 
         capsfilter.set_property("caps", &gst::Caps::new_simple(
             "video/x-raw",
-            caps_options.as_ref()
+            caps_options.as_ref(),
         ));
 
         ximagesrc.set_property_from_str("show-pointer", "1");
@@ -198,7 +207,7 @@ impl GstHandle {
 
         audio_capsfilter.set_property("caps", &gst::Caps::new_simple(
             "audio/x-raw",
-            caps_options.as_ref()
+            caps_options.as_ref(),
         ));
 
         //Create a new pulsesrc to get audio from the PulseAudio server
@@ -219,11 +228,18 @@ impl GstHandle {
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
 
+        //TODO: get the ssrcs from the SDP message
+        webrtcbin.connect("on-new-transceiver", false, |value| {
+            let transcriver = value[1].get::<WebRTCRTPTransceiver>().unwrap();
+            trace!("New transceiver: {:?}", transcriver);
+            None
+        });
+
         let mut sdp_message = SDPMessage::new();
         sdp_message.set_uri(&sdp);
         let webrtc_desc = WebRTCSessionDescription::new(
             WebRTCSDPType::Offer,
-            sdp_message
+            sdp_message,
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
