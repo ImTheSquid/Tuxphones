@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Rust Build"]
+    types:
+      - completed
+    branches:
+      - 'releases/**'
+
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deps:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpulse-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav gstreamer1.0-doc gstreamer1.0-tools gstreamer1.0-x gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-gtk3 gstreamer1.0-qt5 gstreamer1.0-pulseaudio
+
+  cargo:
+    needs: [deps]
+    defaults:
+      run:
+        working-directory: daemon
+
+    steps:
+      - name: Release Build
+        run: cargo build --release
+
+  betterdiscord:
+    defaults:
+      run:
+        working-directory: bd
+    
+    steps:
+      - uses: actions/setup-node@v3
+      - name: Install Dependencies
+        run: npm install
+      - name: Build
+        run: ./node_modules/.bin/bdbuilder --plugin="./Tuxphones" --production
+
+  crates:
+    needs: [cargo]
+    defaults:
+      run:
+        working-directory: daemon
+
+    steps:
+      - name: Publish to Cargo
+        run: cargo publish --token ${CRATES_TOKEN}
+        env:
+          CRATES_TOKEN: ${{ secrets.CRATES_TOKEN }}
+
+  release:
+    needs: [cargo, betterdiscord]
+
+    steps:
+      - uses: softprops/action-gh-release@v1
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          draft: true
+          repository: ImTheSquid/Tuxphones
+          files: |
+            bd/builds/Tuxphones.plugin.js
+            daemon/target/release/tuxphones
+

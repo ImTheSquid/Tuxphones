@@ -2,6 +2,7 @@ use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, pro
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
+use self_update::{cargo_crate_version, errors::Error, Status};
 
 fn main() {
     let subscriber = FmtSubscriber::builder()
@@ -13,6 +14,14 @@ fn main() {
         Err(e) => {
             eprintln!("Failed to set global logging default subscriber: {}", e);
         }
+    }
+
+    match check_for_updates() {
+        Ok(status) => match status {
+            Status::UpToDate(_) => info!("Tuxphones is up-to-date!"),
+            Status::Updated(new) => info!("Tuxphones updated to {new}!")
+        },
+        Err(e) => error!("Error fetching update: {e}")
     }
 
     let run = Arc::new(AtomicBool::new(true));
@@ -46,4 +55,17 @@ fn main() {
 
     socket_watcher.join();
     command_processor.join();
+}
+
+fn check_for_updates() -> Result<Status, Error> {
+    let status = self_update::backends::github::Update::configure()
+        .repo_owner("ImTheSquid")
+        .repo_name("Tuxphones")
+        .bin_name("updated")
+        .show_download_progress(true)
+        .current_version(cargo_crate_version!())
+        .build()?
+        .update()?;
+
+    Ok(status)
 }
