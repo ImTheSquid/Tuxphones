@@ -63,6 +63,7 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           draft: true
           repository: ImTheSquid/Tuxphones
+          tag_name: ${echo "${{github.ref}}" | cut -d ";" -f 2}
           files: |
             bd/builds/Tuxphones.plugin.js
             daemon/target/release/tuxphones
