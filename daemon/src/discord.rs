@@ -83,6 +83,11 @@ pub mod websocket {
                 info!("WebSocket connection successful");
             }
 
+            let username = "tuxphones";
+            let password = "asedtrqewrytwq435r";
+            let sdp_client_data = format!("a=extmap-allow-mixed\na=ice-ufrag:{username}\na=ice-pwd:{password}\na=ice-options:trickle\na=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\na=rtpmap:111 opus/48000/2\na=extmap:14 urn:ietf:params:rtp-hdrext:toffset\na=extmap:13 urn:3gpp:video-orientation\na=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\na=extmap:6 http://www.webrtc.org/experiments/rtp-hdrext/video-content-type\na=extmap:7 http://www.webrtc.org/experiments/rtp-hdrext/video-timing\na=extmap:8 http://www.webrtc.org/experiments/rtp-hdrext/color-space\na=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\na=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\na=rtpmap:96 VP8/90000\na=rtpmap:97 rtx/90000")
+                                        .replace("\n", "\r\n");
+
             let (ws_write, ws_read) = ws_stream.split();
 
             let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
@@ -119,6 +124,8 @@ pub mod websocket {
                     let rtc_connection_id = rtc_connection_id.clone();
                     let ip = ip.clone();
                     let max_resolution = max_resolution.clone();
+
+                    let sdp_client_data = sdp_client_data.clone();
                     async move {
                         let mut msg = match msg {
                             Ok(ws_msg) => {
@@ -183,7 +190,8 @@ pub mod websocket {
                                     data.port,
                                     rtc_connection_id,
                                     endpoint.clone(),
-                                    ip
+                                    ip,
+                                    sdp_client_data.clone()
                                 ).await.expect("Failed to send stream information");
                             }
                             IncomingWebsocketMessage::OpCode4(data) => {
@@ -203,7 +211,8 @@ pub mod websocket {
                                             xid,
                                             max_resolution.clone(),
                                             max_framerate.into(),
-                                            data.sdp.replace("\n", "\n\r"),
+                                            &sdp_client_data,
+                                            &data.sdp.replace("\n", "\r\n"),
                                             tx
                                         ).expect("Failed to start gstreamer");
                                         gst.start().expect("Failed to start stream");
@@ -380,7 +389,8 @@ pub mod websocket {
             port: u16,
             rtc_connection_id: String,
             endpoint: String,
-            ip: String
+            ip: String,
+            sdp_client_data: String
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
             Self::send_partial_stream_information(
                 write,
@@ -391,10 +401,6 @@ pub mod websocket {
                 max_framerate,
                 false
             ).await?;
-
-            let username = "tuxphones";
-            let password = "asedtrqewrytwq435r";
-            let data = format!("a=extmap-allow-mixed\na=ice-ufrag:{username}\na=ice-pwd:{password}\na=ice-options:trickle\na=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\na=rtpmap:111 opus/48000/2\na=extmap:14 urn:ietf:params:rtp-hdrext:toffset\na=extmap:13 urn:3gpp:video-orientation\na=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\na=extmap:6 http://www.webrtc.org/experiments/rtp-hdrext/video-content-type\na=extmap:7 http://www.webrtc.org/experiments/rtp-hdrext/video-timing\na=extmap:8 http://www.webrtc.org/experiments/rtp-hdrext/color-space\na=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\na=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\na=rtpmap:96 VP8/90000\na=rtpmap:97 rtx/90000");
 
             let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 { 
                 protocol: "webrtc".to_string(), 
@@ -415,8 +421,8 @@ pub mod websocket {
                         rtx_payload_type: None
                     }
                 ], 
-                data: data.clone(),
-                sdp: data
+                data: sdp_client_data.clone(),
+                sdp: sdp_client_data
             }).to_json();
 
             trace!("[STREAM] {ws1}");

@@ -124,7 +124,7 @@ impl GstHandle {
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
-        sdp: String, tx: async_std::channel::Sender<StreamSSRCs>,
+        sdp_client: &str, sdp_server: &str, tx: async_std::channel::Sender<StreamSSRCs>,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
@@ -245,13 +245,20 @@ impl GstHandle {
         });
 
         let mut sdp_message = SDPMessage::new();
-        sdp_message.set_uri(&sdp);
+        sdp_message.set_uri(sdp_server);
         let webrtc_desc = WebRTCSessionDescription::new(
             WebRTCSDPType::Answer,
             sdp_message,
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
+        let mut sdp_client_message = SDPMessage::new();
+        sdp_client_message.set_uri(sdp_client);
+        let local_description = WebRTCSessionDescription::new(
+            WebRTCSDPType::Offer,
+            sdp_client_message
+        );
+        webrtcbin.emit_by_name::<()>("set-local-description", &[&local_description, &None::<gst::Promise>]);
 
         //queues
         let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
