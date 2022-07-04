@@ -300,6 +300,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
 		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId && m.default._changeCallbacks.size)).default;
 		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
+		const WebRequests = BdApi.findModule((m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete)).default;
 		const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 		const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 		const Button = BdApi.findModuleByProps("BorderColors");
@@ -378,16 +379,15 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
 						return;
 					} else if (this.currentSoundProfile) switch (arg.type) {
-							case "STREAM_CREATE":
-								this.serverId = arg.rtcServerId;
-								return;
-							case "STREAM_UPDATE":
-								return;
-							case "VOICE_STATE_UPDATES":
-								arg.voiceStates[0].selfStream = false;
-								break;
-						} else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) Logger.log(arg);
-						else Logger.log(arg.type);
+						case "STREAM_CREATE":
+							this.serverId = arg.rtcServerId;
+							return;
+						case "STREAM_UPDATE":
+							return;
+						case "VOICE_STATE_UPDATES":
+							arg.voiceStates[0].selfStream = false;
+							break;
+					} else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) Logger.log(arg);
 					original(arg);
 				}));
 				ContextMenu.getDiscordMenu("GoLiveModal").then((m => {
@@ -473,21 +473,30 @@ function buildPlugin([BasePlugin, PluginApi]) {
 			}
 			startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-					this.unixClient.write(JSON.stringify({
-						type: "StartStream",
-						pid,
-						xid,
-						resolution,
-						framerate,
-						server_id,
-						user_id: AuthenticationStore.getId(),
-						token,
-						session_id: AuthenticationStore.getSessionId(),
-						rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-						endpoint,
-						ip
+					WebRequests.get({
+						url: "/voice/ice"
+					}).then((iceData => {
+						Logger.log(iceData);
+						this.unixClient.write(JSON.stringify({
+							type: "StartStream",
+							pid,
+							xid,
+							resolution,
+							framerate,
+							server_id,
+							user_id: AuthenticationStore.getId(),
+							token,
+							session_id: AuthenticationStore.getSessionId(),
+							rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
+							endpoint,
+							ip,
+							ice: iceData.body.servers.map((item => {
+								item.type = "IceData";
+								return item;
+							}))
+						}));
+						this.unixClient.destroy();
 					}));
-					this.unixClient.destroy();
 				}));
 			}
 			endStream() {

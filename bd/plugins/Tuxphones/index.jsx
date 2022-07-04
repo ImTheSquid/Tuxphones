@@ -10,6 +10,7 @@ const React = BdApi.React;
 const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
 const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId && m.default._changeCallbacks.size).default;
 const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
+const WebRequests = BdApi.findModule(m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete).default;
 const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
@@ -115,9 +116,9 @@ export default class extends BasePlugin {
                 }
             } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
                 Logger.log(arg)
-            } else {
+            }/* else {
                 Logger.log(arg.type)
-            }
+            }*/
             original(arg);
         });
 
@@ -228,21 +229,27 @@ export default class extends BasePlugin {
     // Guild ID will always exist, so get RTC Server ID
     startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
         this.unixClient = createConnection(this.sockPath, () => {
-            this.unixClient.write(JSON.stringify({
-                type: 'StartStream',
-                pid: pid,
-                xid: xid,
-                resolution: resolution,
-                framerate: framerate,
-                server_id: server_id,
-                user_id: AuthenticationStore.getId(),
-                token: token,
-                session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
-                rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-                endpoint: endpoint,
-                ip: ip
-            }));
-            this.unixClient.destroy();
+            WebRequests.get({url: '/voice/ice'}).then(iceData => {
+                this.unixClient.write(JSON.stringify({
+                    type: 'StartStream',
+                    pid: pid,
+                    xid: xid,
+                    resolution: resolution,
+                    framerate: framerate,
+                    server_id: server_id,
+                    user_id: AuthenticationStore.getId(),
+                    token: token,
+                    session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
+                    rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
+                    endpoint: endpoint,
+                    ip: ip,
+                    ice: iceData.body.servers.map(item => {
+                        item.type = 'IceData';
+                        return item;
+                    })
+                }));
+                this.unixClient.destroy();
+            });
         });
     }
 

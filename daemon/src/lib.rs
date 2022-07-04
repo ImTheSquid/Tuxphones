@@ -72,7 +72,8 @@ impl CommandProcessor {
                                 session_id,
                                 rtc_connection_id,
                                 endpoint,
-                                ip
+                                ip,
+                                ice
                             } => {
                                 info!("[StartStream] Command received");
                                 match pulse.setup_audio_capture(None) {

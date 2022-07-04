@@ -30,6 +30,16 @@ pub mod receive {
         pub is_fixed: bool
     }
 
+    /// Holds RTC ICE information
+    #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+    #[serde(tag = "type")]
+    pub struct IceData {
+        pub credential: Option<String>,
+        pub url: String,
+        pub urls: String,
+        pub username: Option<String>
+    }
+
     /// Commands that can be received from the client plugin
     #[derive(Deserialize, Debug, PartialEq, Eq)]
     #[serde(tag = "type")]
@@ -57,7 +67,9 @@ pub mod receive {
             /// Target endpoint
             endpoint: String,
             /// Current public IP
-            ip: String
+            ip: String,
+            /// ICE Data
+            ice: Vec<IceData>
         },
         /// Stops the currently-running stream
         StopStream,
