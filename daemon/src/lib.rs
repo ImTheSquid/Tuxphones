@@ -102,6 +102,7 @@ impl CommandProcessor {
                                     server_id,
                                     session_id,
                                     token,
+                                    *ice,
                                     user_id,
                                     ws_sender.clone()
                                 )) {

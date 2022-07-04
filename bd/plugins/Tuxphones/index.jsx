@@ -228,28 +228,33 @@ export default class extends BasePlugin {
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
     startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-        this.unixClient = createConnection(this.sockPath, () => {
-            WebRequests.get({url: '/voice/ice'}).then(iceData => {
-                this.unixClient.write(JSON.stringify({
-                    type: 'StartStream',
-                    pid: pid,
-                    xid: xid,
-                    resolution: resolution,
-                    framerate: framerate,
-                    server_id: server_id,
-                    user_id: AuthenticationStore.getId(),
-                    token: token,
-                    session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
-                    rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-                    endpoint: endpoint,
-                    ip: ip,
-                    ice: iceData.body.servers.map(item => {
-                        item.type = 'IceData';
-                        return item;
-                    })
-                }));
-                this.unixClient.destroy();
-            });
+        Logger.log("TEST")
+        this.unixClient = createConnection(this.sockPath, async () => {
+            const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
+            const authData = servers.find(server => server.credential);
+
+            this.unixClient.write(JSON.stringify({
+                type: 'StartStream',
+                pid: pid,
+                xid: xid,
+                resolution: resolution,
+                framerate: framerate,
+                server_id: server_id,
+                user_id: AuthenticationStore.getId(),
+                token: token,
+                session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
+                rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
+                endpoint: endpoint,
+                ip: ip,
+                ice: {
+                    type: "IceData",
+                    urls: servers.map(server => server.url),
+                    username: authData.username,
+                    credential: authData.credential,
+                    ttl,
+                }
+            }));
+            this.unixClient.destroy();
         });
     }
 

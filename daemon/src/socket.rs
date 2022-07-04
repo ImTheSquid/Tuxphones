@@ -1,7 +1,7 @@
 pub mod receive {
     use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
-    use tracing::{error, info};
+    use tracing::{error, info, trace};
     use crate::{pid, xid};
 
     /// Listens on a socket for commands
@@ -34,10 +34,10 @@ pub mod receive {
     #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub struct IceData {
-        pub credential: Option<String>,
-        pub url: String,
-        pub urls: String,
-        pub username: Option<String>
+        pub urls: Vec<String>,
+        pub username: String,
+        pub credential: String,
+        pub ttl: String
     }
 
     /// Commands that can be received from the client plugin
@@ -69,7 +69,7 @@ pub mod receive {
             /// Current public IP
             ip: String,
             /// ICE Data
-            ice: Vec<IceData>
+            ice: Box<IceData>
         },
         /// Stops the currently-running stream
         StopStream,
@@ -122,6 +122,8 @@ pub mod receive {
                                     continue;
                                 }
                             }
+
+                            trace!("Received command: {}", buf);
 
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
                                 Ok(cmd) => match sender.send(cmd) {

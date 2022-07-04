@@ -472,31 +472,37 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}
 			}
 			startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (() => {
-					WebRequests.get({
+				Logger.log("TEST");
+				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (async () => {
+					const {
+						servers,
+						ttl
+					} = (await WebRequests.get({
 						url: "/voice/ice"
-					}).then((iceData => {
-						Logger.log(iceData);
-						this.unixClient.write(JSON.stringify({
-							type: "StartStream",
-							pid,
-							xid,
-							resolution,
-							framerate,
-							server_id,
-							user_id: AuthenticationStore.getId(),
-							token,
-							session_id: AuthenticationStore.getSessionId(),
-							rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-							endpoint,
-							ip,
-							ice: iceData.body.servers.map((item => {
-								item.type = "IceData";
-								return item;
-							}))
-						}));
-						this.unixClient.destroy();
+					})).body;
+					const authData = servers.find((server => server.credential));
+					this.unixClient.write(JSON.stringify({
+						type: "StartStream",
+						pid,
+						xid,
+						resolution,
+						framerate,
+						server_id,
+						user_id: AuthenticationStore.getId(),
+						token,
+						session_id: AuthenticationStore.getSessionId(),
+						rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
+						endpoint,
+						ip,
+						ice: {
+							type: "IceData",
+							urls: servers.map((server => server.url)),
+							username: authData.username,
+							credential: authData.credential,
+							ttl
+						}
 					}));
+					this.unixClient.destroy();
 				}));
 			}
 			endStream() {

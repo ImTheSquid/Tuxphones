@@ -22,7 +22,7 @@ pub mod websocket {
 
     use crate::discord_op::opcodes::*;
     use crate::gstreamer::{EncryptionAlgorithm, GstHandle, VideoEncoderType, H264Settings, StreamSSRCs};
-    use crate::receive::{StreamResolutionInformation, SocketListenerCommand};
+    use crate::receive::{StreamResolutionInformation, SocketListenerCommand, IceData};
     use crate::xid;
 
     const API_VERSION: u8 = 7;
@@ -69,6 +69,7 @@ pub mod websocket {
             server_id: String,
             session_id: String,
             token: String,
+            ice: IceData,
             user_id: String,
             command_sender: Sender<SocketListenerCommand>
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
