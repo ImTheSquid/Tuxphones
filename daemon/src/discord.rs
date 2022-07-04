@@ -84,8 +84,8 @@ pub mod websocket {
                 info!("WebSocket connection successful");
             }
 
-            let username = "tuxphones";
-            let password = "asedtrqewrytwq435r";
+            let username = &ice.username;
+            let password = &ice.credential;
             let sdp_client_data = format!("a=extmap-allow-mixed\na=ice-ufrag:{username}\na=ice-pwd:{password}\na=ice-options:trickle\na=extmap:1 urn:ietf:params:rtp-hdrext:ssrc-audio-level\na=extmap:2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\na=extmap:3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01\na=extmap:4 urn:ietf:params:rtp-hdrext:sdes:mid\na=rtpmap:111 opus/48000/2\na=extmap:14 urn:ietf:params:rtp-hdrext:toffset\na=extmap:13 urn:3gpp:video-orientation\na=extmap:5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\na=extmap:6 http://www.webrtc.org/experiments/rtp-hdrext/video-content-type\na=extmap:7 http://www.webrtc.org/experiments/rtp-hdrext/video-timing\na=extmap:8 http://www.webrtc.org/experiments/rtp-hdrext/color-space\na=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\na=extmap:11 urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id\na=rtpmap:96 VP8/90000\na=rtpmap:97 rtx/90000")
                                         .replace("\n", "\r\n");
 
@@ -127,6 +127,7 @@ pub mod websocket {
                     let max_resolution = max_resolution.clone();
 
                     let sdp_client_data = sdp_client_data.clone();
+                    let ice = ice.clone();
                     async move {
                         let mut msg = match msg {
                             Ok(ws_msg) => {
@@ -214,6 +215,7 @@ pub mod websocket {
                                             max_framerate.into(),
                                             &sdp_client_data,
                                             &data.sdp.replace("\n", "\r\n"),
+                                            ice,
                                             tx
                                         ).expect("Failed to start gstreamer");
                                         gst.start().expect("Failed to start stream");
