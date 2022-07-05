@@ -61,7 +61,7 @@ fn check_for_updates() -> Result<Status, Error> {
     let status = self_update::backends::github::Update::configure()
         .repo_owner("ImTheSquid")
         .repo_name("Tuxphones")
-        .bin_name("updated")
+        .bin_name("tuxphones")
         .show_download_progress(true)
         .current_version(cargo_crate_version!())
         .build()?
