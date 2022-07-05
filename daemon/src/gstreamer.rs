@@ -6,9 +6,10 @@ use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::{receive::StreamResolutionInformation, xid};
+use crate::receive::IceData;
 
 //Gstreamer handles count to prevent deinitialization of gstreamer
 static HANDLES_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
@@ -124,7 +125,7 @@ impl GstHandle {
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32,
-        sdp_client: &str, sdp_server: &str, tx: async_std::channel::Sender<StreamSSRCs>,
+        sdp_client: &str, sdp_server: &str, ice: IceData, tx: async_std::channel::Sender<StreamSSRCs>,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
@@ -227,6 +228,19 @@ impl GstHandle {
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
 
+        let stun_server = ice.urls.iter().find(|url| url.starts_with("stun:")).unwrap().replace("stun:", "stun://");
+        //TODO: Use filter_map instead
+        //TODO: replace username, and password with ice.username, ice.credential
+        let turn_auth = format!("turn://{}:{}@", "username", "password");
+        let turn_servers = ice.urls.iter().filter(|url| url.starts_with("turn:")).map(|url| url.replace("turn:", &turn_auth)).collect::<Vec<_>>();
+        debug!("Using STUN server: {:?}", stun_server);
+        debug!("Using TURN servers: {:?}", turn_servers);
+        webrtcbin.set_property_from_str("stun-server", &stun_server);
+
+        for turn_server in turn_servers {
+            webrtcbin.emit_by_name::<bool>("add-turn-server", &[&turn_server]);
+        }
+
         //TODO: Put listener in a mutex to be able to disconnect it from inside the closure
         let listener = webrtcbin.connect("on-negotiation-needed", true, move |value| {
             let webrtcbin = value[0].get::<Element>().unwrap();
@@ -244,14 +258,6 @@ impl GstHandle {
             None
         });
 
-        let mut sdp_message = SDPMessage::new();
-        sdp_message.set_uri(sdp_server);
-        let webrtc_desc = WebRTCSessionDescription::new(
-            WebRTCSDPType::Answer,
-            sdp_message,
-        );
-        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
-
         let mut sdp_client_message = SDPMessage::new();
         sdp_client_message.set_uri(sdp_client);
         let local_description = WebRTCSessionDescription::new(
@@ -259,6 +265,14 @@ impl GstHandle {
             sdp_client_message
         );
         webrtcbin.emit_by_name::<()>("set-local-description", &[&local_description, &None::<gst::Promise>]);
+
+        let mut sdp_message = SDPMessage::new();
+        sdp_message.set_uri(sdp_server);
+        let webrtc_desc = WebRTCSessionDescription::new(
+            WebRTCSDPType::Answer,
+            sdp_message,
+        );
+        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
 
         //queues
         let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
