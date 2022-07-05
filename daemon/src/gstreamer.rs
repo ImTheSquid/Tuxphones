@@ -1,12 +1,13 @@
 use std::sync::Mutex;
 
 use async_std::task;
+use gst::ffi::gst_object_unref;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::{receive::StreamResolutionInformation, xid};
 use crate::receive::IceData;
@@ -104,6 +105,7 @@ impl Drop for GstHandle {
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
         std::fs::write("/tmp/gstdrop.dot", out.as_str()).unwrap();
 
+        self.pipeline.send_event(gst::event::Eos::new());
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
             error!("Failed to stop pipeline: {:?}", e);
         };
