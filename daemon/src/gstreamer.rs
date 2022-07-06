@@ -1,7 +1,7 @@
-use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use async_std::task;
+use gst::ffi::gst_object_unref;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, PromiseError, StateChangeError, StateChangeSuccess, StructureRef};
 use gst::ffi::GstStructure;
 use gst::prelude::*;
@@ -107,6 +107,7 @@ impl Drop for GstHandle {
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
         std::fs::write("/tmp/gstdrop.dot", out.as_str()).unwrap();
 
+        self.pipeline.send_event(gst::event::Eos::new());
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
             error!("Failed to stop pipeline: {:?}", e);
         };
