@@ -1,12 +1,15 @@
-use std::sync::Mutex;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use async_std::task;
-use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
+use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, PromiseError, StateChangeError, StateChangeSuccess, StructureRef};
+use gst::ffi::GstStructure;
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
 use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::WebRTCSDPType::Offer;
 use once_cell::sync::Lazy;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::{receive::StreamResolutionInformation, xid};
 use crate::receive::IceData;
@@ -31,9 +34,9 @@ pub struct StreamSSRCs {
 impl std::fmt::Display for GstInitializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
-            GstInitializationError::Init(e) => format!("Initialization error: {}", e),
-            GstInitializationError::Element(e) => format!("Element error: {}", e),
-            GstInitializationError::Pad(e) => format!("Pad error: {}", e),
+            GstInitializationError::Init(e) => format!("Initialization error: {:?}", e),
+            GstInitializationError::Element(e) => format!("Element error: {:?}", e),
+            GstInitializationError::Pad(e) => format!("Pad error: {:?}", e),
         };
         f.write_str(&str)
     }
@@ -231,19 +234,54 @@ impl GstHandle {
         //TODO: Use filter_map instead
         let stun_server = ice.urls.iter().find(|url| url.starts_with("stun:")).unwrap().replace("stun:", "stun://");
 
+        //TODO: Find a way to sanitize ice.username and ice.password
         let turn_auth = format!("turn://{}:{}@", ice.username, ice.credential);
         let turn_servers = ice.urls.iter().filter(|url| url.starts_with("turn:")).map(|url| url.replace("turn:", &turn_auth)).collect::<Vec<_>>();
         debug!("Using STUN server: {:?}", stun_server);
         debug!("Using TURN servers: {:?}", turn_servers);
         webrtcbin.set_property_from_str("stun-server", &stun_server);
 
+        //TODO: Use the for after instead of this before release
+        webrtcbin.set_property_from_str("turn-server", &turn_servers[0]);
+        /*
         for turn_server in turn_servers {
             webrtcbin.emit_by_name::<bool>("add-turn-server", &[&turn_server]);
         }
+         */
 
-        //TODO: Put listener in a mutex to be able to disconnect it from inside the closure
-        let listener = webrtcbin.connect("on-negotiation-needed", true, move |value| {
-            let webrtcbin = value[0].get::<Element>().unwrap();
+
+        webrtcbin.connect("on-negotiation-needed", false, move |value| {
+            info!("[WebRTC] Negotiation needed");
+
+            let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
+
+            let create_offer_options = gst::Structure::new_empty("create_offer_options");
+
+            {
+                let webrtcbin_clone = webrtcbin.clone();
+                webrtcbin.lock().unwrap().emit_by_name::<()>("create-offer", &[&create_offer_options, &Promise::with_change_func(move |result| {
+                    match result {
+                        Ok(offer) => {
+                            info!("[WebRTC] Offer created");
+
+                            let session_description = offer.unwrap().get::<WebRTCSessionDescription>("offer").unwrap();
+
+                            let sdp = session_description.sdp().as_text().unwrap().replace("\r\n", "\n");
+                            trace!("[WebRTC] Offer: {:?}", sdp);
+
+                            webrtcbin_clone.lock().unwrap().emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
+                            info!("[WebRTC] Local description set");
+                            //TODO: send sdp.as_str() to the websocket
+                        }
+                        Err(error) => {
+                            error!("[WebRTC] Failed to create offer: {:?}", error);
+                            //TODO: Return an error to the new call by making this method async or blocking (Preferably async)
+                        }
+                    }
+                })]);
+            }
+
+            /*
             let video_pad = webrtcbin.static_pad("sink_0").unwrap();
             let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
             debug!("WebRTC negotiation finished, sending ssrcs");
@@ -253,11 +291,17 @@ impl GstHandle {
                 video: get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap(),
                 rtx: 0,
             }));
-
-            //webrtcbin.disconnect(listener);
+            */
+            let _ = task::block_on(tx.send(StreamSSRCs {
+                audio: 0,
+                video: 0,
+                rtx: 0,
+            }));
             None
         });
 
+        /*
+        OLD CODE TO SET local and remote description:
         let mut sdp_client_message = SDPMessage::new();
         sdp_client_message.set_uri(sdp_client);
         let local_description = WebRTCSessionDescription::new(
@@ -273,6 +317,8 @@ impl GstHandle {
             sdp_message,
         );
         webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
+
+         */
 
         //queues
         let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
