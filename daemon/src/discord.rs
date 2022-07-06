@@ -213,8 +213,6 @@ pub mod websocket {
                                             xid,
                                             max_resolution.clone(),
                                             max_framerate.into(),
-                                            &sdp_client_data,
-                                            &data.sdp.replace("\n", "\r\n"),
                                             ice,
                                             tx
                                         ).expect("Failed to start gstreamer");
