@@ -169,7 +169,7 @@ impl PulseHandle {
     }
 
     /// Gets the sinks connected to the Pulse server
-    pub fn get_sinks(self: &mut Self) -> Vec<BasicSinkInfo> {
+    pub fn get_sinks(&mut self) -> Vec<BasicSinkInfo> {
         self.mainloop.borrow_mut().lock();
         let results = Rc::new(RefCell::new(Some(vec![])));
 
@@ -197,7 +197,7 @@ impl PulseHandle {
     } 
 
     /// Gets all applications that are producing audio
-    pub fn get_audio_applications(self: &mut Self) -> Vec<AudioApplication> {
+    pub fn get_audio_applications(&mut self) -> Vec<AudioApplication> {
         self.mainloop.borrow_mut().lock();
 
         let results = Rc::new(RefCell::new(Some(vec![])));
@@ -209,7 +209,7 @@ impl PulseHandle {
                 ListResult::Item(info) => {
                     if let Some(pid) = info.proplist.get_str("application.process.id") {
                         results_ref.borrow_mut().as_mut().unwrap().push(AudioApplication {
-                            name: info.proplist.get_str("application.name").unwrap_or("NONAME".to_string()),
+                            name: info.proplist.get_str("application.name").unwrap_or_else(|| "NONAME".to_string()),
                             pid: pid.parse().unwrap(),
                             index: info.index,
                             sink_index: info.sink,
@@ -231,7 +231,7 @@ impl PulseHandle {
     }
 
     /// Adds sinks for audio capture
-    pub fn setup_audio_capture(self: &mut Self, passthrough_override: Option<&str>) -> Result<(), PulseCaptureSetupError> {
+    pub fn setup_audio_capture(&mut self, passthrough_override: Option<&str>) -> Result<(), PulseCaptureSetupError> {
         // Don't do the same thing twice
         if self.audio_is_setup {
             return Ok(());
@@ -327,7 +327,7 @@ impl PulseHandle {
     }
 
     /// Removes audio capture sinks
-    pub fn teardown_audio_capture(self: &mut Self) {
+    pub fn teardown_audio_capture(&mut self) {
         if !self.audio_is_setup {
             return;
         }
@@ -352,7 +352,7 @@ impl PulseHandle {
     }
 
     /// Unloads modules
-    fn unload_module(self: &mut Self, idx: u32) {
+    fn unload_module(&mut self, idx: u32) {
         let ml_ref = Rc::clone(&self.mainloop);
         let op = self.context.borrow_mut().introspect().unload_module(idx, move |_| unsafe {
             (*ml_ref.as_ptr()).signal(false);
@@ -362,7 +362,7 @@ impl PulseHandle {
     }
 
     /// Starts capturing audio from the application with the given Pulse PID
-    pub fn start_capture(self: &mut Self, pid: pid) -> Result<(), PulseCaptureError> {
+    pub fn start_capture(&mut self, pid: pid) -> Result<(), PulseCaptureError> {
         if !self.audio_is_setup || self.combined_sink_module_index.is_none() {
             return Err(PulseCaptureError::NotSetup);
         }
@@ -392,7 +392,7 @@ impl PulseHandle {
     }
 
     /// Stop capturing audio from application
-    pub fn stop_capture(self: &mut Self) {
+    pub fn stop_capture(&mut self) {
         self.mainloop.borrow_mut().lock();
 
         if let Some(info) = &self.current_app_info {
@@ -411,10 +411,7 @@ impl PulseHandle {
 
 /// Wait for operation to complete
 fn op_wait<T: ?Sized>(ml: &mut Mainloop, op: &Operation<T>) {
-    loop {
-        match op.get_state() {
-            libpulse_binding::operation::State::Running => ml.wait(),
-            libpulse_binding::operation::State::Done | libpulse_binding::operation::State::Cancelled => break
-        }
+    while op.get_state() == libpulse_binding::operation::State::Running  {
+        ml.wait()
     }
 }

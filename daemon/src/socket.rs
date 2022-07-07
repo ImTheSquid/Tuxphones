@@ -14,9 +14,9 @@ pub mod receive {
     pub enum SocketListenerCreationError {
         /// The `HOME` environment variable is not defined.
         NoRuntimeDir,
-        /// An error occured while trying to create the socket.
+        /// An error occurred while trying to create the socket.
         UnableToCreateSocket,
-        /// An error occured while trying to set the socket to non-blocking.
+        /// An error occurred while trying to set the socket to non-blocking.
         UnableToSetNonBlocking
     }
 
@@ -101,12 +101,9 @@ pub mod receive {
             };
 
             // Allows for constant event processing
-            match listener.set_nonblocking(true) {
-                Err(e) => {
-                    error!("Failed to set listener to non-blocking: {}", e);
-                    return Err(SocketListenerCreationError::UnableToSetNonBlocking);
-                }
-                Ok(()) => {}
+            if let Err(e) = listener.set_nonblocking(true) {
+                error!("Failed to set listener to non-blocking: {}", e);
+                return Err(SocketListenerCreationError::UnableToSetNonBlocking);
             }
 
             // Spawn listener thread to check for commands sent to the socket
@@ -237,12 +234,12 @@ pub mod send {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     error!("Write failed: {}", e);
-                    return Err(SocketError::WriteFailed);
+                    Err(SocketError::WriteFailed)
                 },
             },
             Err(e) => {
                 error!("Serialization failed: {}", e);
-                return Err(SocketError::SerializationFailed);
+                Err(SocketError::SerializationFailed)
             },
         }
     }

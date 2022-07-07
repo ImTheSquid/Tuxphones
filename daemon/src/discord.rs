@@ -1,29 +1,27 @@
 pub mod websocket {
     use std::borrow::BorrowMut;
-    use std::process::Command;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::Sender;
     use std::time::Duration;
 
-    use async_std::task::JoinHandle;
     use async_std::{channel, task};
     use async_std::sync::Mutex;
+    use async_std::task::JoinHandle;
     use async_tungstenite::async_std::{connect_async, ConnectStream};
-    use async_tungstenite::tungstenite::{Error, Message};
+    use async_tungstenite::tungstenite::{Message};
     use async_tungstenite::WebSocketStream;
-    use futures_util::{join, SinkExt};
+    use futures_util::{SinkExt};
     use futures_util::stream::{SplitSink, StreamExt};
     use lazy_static::lazy_static;
     use rand::Rng;
     use regex::Regex;
-    use serde_json::{Value, Number};
+    use serde_json::{Number, Value};
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
-    use crate::gstreamer::{GstHandle, VideoEncoderType, H264Settings, ToWs};
-    use crate::receive::{StreamResolutionInformation, SocketListenerCommand, IceData};
-    use crate::xid;
+    use crate::gstreamer::{ToWs};
+    use crate::receive::{SocketListenerCommand, StreamResolutionInformation};
 
     const API_VERSION: u8 = 7;
     const MAX_BITRATE: u32 = 1_000_000;
@@ -37,7 +35,7 @@ pub mod websocket {
     #[derive(Debug)]
     pub struct WebsocketConnection {
         task: Option<JoinHandle<()>>,
-        heartbeat_task: Arc<Mutex<Option<JoinHandle<()>>>>
+        heartbeat_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     }
 
     impl Drop for WebsocketConnection {
@@ -70,7 +68,7 @@ pub mod websocket {
             token: String,
             user_id: String,
             from_gst_rx: channel::Receiver<ToWs>,
-            command_sender: Sender<SocketListenerCommand>
+            command_sender: Sender<SocketListenerCommand>,
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
             let (mut ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
@@ -151,7 +149,6 @@ pub mod websocket {
 
                         match msg {
                             IncomingWebsocketMessage::OpCode4(data) => {
-
                                 /*
                                 task::spawn({
                                     let ws_write = ws_write.clone();
@@ -291,25 +288,25 @@ pub mod websocket {
             local_sdp: String,
             max_resolution: GatewayResolution,
             max_framerate: u8,
-            active: bool
+            active: bool,
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
-            let ws12 = OutgoingWebsocketMessage::OpCode12(OpCode12 { 
-                audio_ssrc, 
-                rtx_ssrc, 
-                video_ssrc, 
+            let ws12 = OutgoingWebsocketMessage::OpCode12(OpCode12 {
+                audio_ssrc,
+                rtx_ssrc,
+                video_ssrc,
                 streams: vec![
-                    GatewayStream { 
-                        stream_type: "video".to_string(), 
-                        rid: "100".to_string(), 
-                        quality: 100, 
-                        active: Some(active), 
-                        ssrc: Some(audio_ssrc), 
-                        rtx_ssrc: Some(rtx_ssrc), 
-                        max_bitrate: Some(MAX_BITRATE), 
-                        max_framerate: Some(max_framerate), 
-                        max_resolution: Some(max_resolution) 
+                    GatewayStream {
+                        stream_type: "video".to_string(),
+                        rid: "100".to_string(),
+                        quality: 100,
+                        active: Some(active),
+                        ssrc: Some(audio_ssrc),
+                        rtx_ssrc: Some(rtx_ssrc),
+                        max_bitrate: Some(MAX_BITRATE),
+                        max_framerate: Some(max_framerate),
+                        max_resolution: Some(max_resolution),
                     }
-                ] 
+                ],
             }).to_json();
 
             trace!("[PARTIAL STREAM] {ws12}");
@@ -331,7 +328,7 @@ pub mod websocket {
             rtc_connection_id: String,
             endpoint: String,
             ip: String,
-            sdp_client_data: String
+            sdp_client_data: String,
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
             Self::send_partial_stream_information(
                 write,
@@ -341,30 +338,30 @@ pub mod websocket {
                 local_sdp.clone(),
                 max_resolution.clone(),
                 max_framerate,
-                false
+                false,
             ).await?;
 
-            let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 { 
-                protocol: "webrtc".to_string(), 
-                rtc_connection_id, 
+            let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 {
+                protocol: "webrtc".to_string(),
+                rtc_connection_id,
                 codecs: vec![
                     GatewayCodec {
                         name: "H264".to_string(),
                         codec_type: PayloadType::Video,
                         priority: 1000,
                         payload_type: 101,
-                        rtx_payload_type: Some(102)
+                        rtx_payload_type: Some(102),
                     },
                     GatewayCodec {
                         name: "opus".to_string(),
                         codec_type: PayloadType::Audio,
                         priority: 1000,
                         payload_type: 120,
-                        rtx_payload_type: None
-                    }
-                ], 
+                        rtx_payload_type: None,
+                    },
+                ],
                 data: sdp_client_data.clone(),
-                sdp: sdp_client_data
+                sdp: sdp_client_data,
             }).to_json();
 
             trace!("[STREAM] {ws1}");
@@ -380,7 +377,7 @@ pub mod websocket {
                 local_sdp,
                 max_resolution.clone(),
                 max_framerate,
-                false
+                false,
             ).await?;
 
             /*Self::send_partial_stream_information(

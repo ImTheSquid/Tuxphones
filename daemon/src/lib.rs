@@ -1,16 +1,20 @@
-use std::{sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc, Mutex}, thread, time::Duration};
 use std::process::Command;
+
 use async_std::{channel, task};
+use sysinfo::{Pid, PidExt, Process, ProcessExt, SystemExt};
+use tracing::{error, info};
 
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
-use sysinfo::{SystemExt, ProcessExt, Process, Pid, PidExt};
-use tracing::{error, info};
+pub use socket::receive;
 use x::XServerHandle;
-
 // Makes sure typing is preserved
 use u32 as pid;
 use u32 as xid;
+
+use crate::discord::websocket::WebsocketConnection;
+use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 mod pulse;
 mod gstreamer;
@@ -19,12 +23,8 @@ mod x;
 mod discord;
 mod discord_op;
 
-pub use socket::receive;
-use crate::discord::websocket::WebsocketConnection;
-use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
-
 pub struct CommandProcessor {
-    thread: Option<thread::JoinHandle<()>>
+    thread: Option<thread::JoinHandle<()>>,
 }
 
 impl CommandProcessor {
@@ -49,7 +49,7 @@ impl CommandProcessor {
             };
 
             let mut ws: Option<WebsocketConnection> = None;
-            let mut stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
+            let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
 
             loop {
                 if !run.load(Ordering::SeqCst) {
@@ -62,7 +62,7 @@ impl CommandProcessor {
                 match receiver.try_recv() {
                     Ok(cmd) => {
                         match cmd {
-                            SocketListenerCommand::StartStream { 
+                            SocketListenerCommand::StartStream {
                                 pid,
                                 xid,
                                 resolution,
@@ -78,7 +78,7 @@ impl CommandProcessor {
                             } => {
                                 info!("[StartStream] Command received");
                                 match pulse.setup_audio_capture(None) {
-                                    Ok(_) => {},
+                                    Ok(_) => {}
                                     Err(e) => {
                                         error!("Failed to setup pulse capture: {}", e);
                                         continue;
@@ -86,7 +86,7 @@ impl CommandProcessor {
                                 }
 
                                 match pulse.start_capture(pid) {
-                                    Ok(_) => {},
+                                    Ok(_) => {}
                                     Err(e) => {
                                         error!("Failed to start pulse capture: {}", e);
                                         continue;
@@ -98,7 +98,7 @@ impl CommandProcessor {
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 //TODO: Find a better way to do this
-                                let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
                                     String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                 } else { false };
 
@@ -108,7 +108,7 @@ impl CommandProcessor {
                                     resolution.clone(),
                                     framerate.into(),
                                     *ice,
-                                    to_ws_tx
+                                    to_ws_tx,
                                 ).expect("Failed to initialize gstreamer pipeline");
                                 gst.start().expect("Failed to start stream");
 
@@ -125,7 +125,7 @@ impl CommandProcessor {
                                     token,
                                     user_id,
                                     from_gst_rx,
-                                    ws_sender.clone()
+                                    ws_sender.clone(),
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
@@ -135,7 +135,7 @@ impl CommandProcessor {
                                 };
 
                                 info!("[StartStream] Command processed (stream started)");
-                            },
+                            }
                             SocketListenerCommand::StopStream | SocketListenerCommand::StopStreamInternal => {
                                 info!("[StopStream] Command received");
 
@@ -154,7 +154,7 @@ impl CommandProcessor {
                                         error!("Failed to notify client of internal stream stop: {:?}", e);
                                     }
                                 }
-                            },
+                            }
                             SocketListenerCommand::GetInfo { xids } => {
                                 info!("[GetInfo] Command received");
 
@@ -162,7 +162,7 @@ impl CommandProcessor {
                                 let xid_pid: Vec<(xid, pid)> = xids
                                     .into_iter()
                                     .filter_map(|xid| {
-                                        if let Some(Some(pid)) = x.pid_from_xid(xid).ok() {
+                                        if let Ok(Some(pid)) = x.pid_from_xid(xid) {
                                             return Some((xid, pid));
                                         }
 
@@ -181,7 +181,7 @@ impl CommandProcessor {
                                             pid: *pid,
                                             xid: *xid,
                                         });
-                                    }   
+                                    }
                                 }
 
                                 // If there are more Pulse applications to resolve, lookup process name and try to find pair with given PID for XID
@@ -189,10 +189,10 @@ impl CommandProcessor {
                                 let mut system = sysinfo::System::new();
                                 system.refresh_processes();
                                 let processes_with_cmd: Vec<(&Pid, &Process)> = system.processes()
-                                    .into_iter()
-                                    .filter(|(_, p)| p.cmd().len() > 0)
+                                    .iter()
+                                    .filter(|(_, p)| !p.cmd().is_empty())
                                     .collect();
-                                
+
                                 for app in &apps {
                                     for (proc_pid, process) in &processes_with_cmd {
                                         let cmd_strings: Vec<&str> = process.cmd()[0].split(' ').collect();
@@ -218,13 +218,13 @@ impl CommandProcessor {
                                 }
                             }
                         }
-                    },
+                    }
                     Err(e) => match e {
                         mpsc::TryRecvError::Disconnected => {
                             error!("Failed to watch for receiver: {}", e);
                             run.store(false, Ordering::SeqCst);
                             break;
-                        },
+                        }
                         mpsc::TryRecvError::Empty => {
                             thread::sleep(sleep_time);
                         }

@@ -25,7 +25,7 @@ impl XServerHandle {
     }
 
     /// Attempts to derive a PID from an XID
-    pub fn pid_from_xid(self: &Self, xid: xid) -> Result<Option<pid>, xcb::Error> {
+    pub fn pid_from_xid(&self, xid: xid) -> Result<Option<pid>, xcb::Error> {
         // Create request
         let cookie = self.connection.send_request(&QueryClientIds {
             specs: &[ClientIdSpec {
@@ -37,7 +37,7 @@ impl XServerHandle {
         let reply = self.connection.wait_for_reply(cookie)?;
 
         if let Some(val) = reply.ids().next() {
-            return Ok(if val.value().len() > 0 && !self.xorg_procs.iter().any(|v| *v == val.value()[0]) {
+            return Ok(if !val.value().is_empty() && !self.xorg_procs.iter().any(|v| *v == val.value()[0]) {
                 Some(val.value()[0])
             } else {
                 None
