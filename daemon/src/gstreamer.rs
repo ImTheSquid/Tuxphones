@@ -87,11 +87,12 @@ pub struct GstHandle {
 //Custom drop logic to deinit gstreamer when all handles are dropped
 impl Drop for GstHandle {
     fn drop(&mut self) {
+        info!("dropping GstHandle");
         let mut handles_count = HANDLES_COUNT.lock().unwrap();
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
-        std::fs::write("/tmp/gstdrop.dot", out.as_str()).unwrap();
+        std::fs::write("/tmp/tuxphones_gstdrop.dot", out.as_str()).unwrap();
 
         self.pipeline.send_event(gst::event::Eos::new());
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
@@ -338,7 +339,7 @@ impl GstHandle {
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
-        std::fs::write("/tmp/gst.dot", out.as_str()).unwrap();
+        std::fs::write("/tmp/tuxphones_gst.dot", out.as_str()).unwrap();
 
         Ok(GstHandle {
             pipeline,
