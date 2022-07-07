@@ -1,4 +1,4 @@
-use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
+use std::{sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
 use std::process::Command;
 use async_std::{channel, task};
 
@@ -49,7 +49,7 @@ impl CommandProcessor {
             };
 
             let mut ws: Option<WebsocketConnection> = None;
-            let mut stream: Option<GstHandle> = None;
+            let mut stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
 
             loop {
                 if !run.load(Ordering::SeqCst) {
@@ -102,20 +102,17 @@ impl CommandProcessor {
                                     String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                 } else { false };
 
-                                stream = match GstHandle::new(
+                                let gst = GstHandle::new(
                                     VideoEncoderType::H264(H264Settings { nvidia_encoder }),
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
                                     *ice,
                                     to_ws_tx
-                                ) {
-                                    Ok(gst_handle) => Some(gst_handle),
-                                    Err(e) => {
-                                        error!("Failed to create gstreamer handle: {:?}", e);
-                                        continue;
-                                    }
-                                };
+                                ).expect("Failed to initialize gstreamer pipeline");
+                                gst.start().expect("Failed to start stream");
+
+                                let _ = stream.lock().unwrap().insert(gst);
 
                                 ws = match task::block_on(WebsocketConnection::new(
                                     endpoint,
@@ -144,6 +141,7 @@ impl CommandProcessor {
 
                                 // Kill gstreamer and ws
                                 ws.take();
+                                stream.lock().unwrap().take();
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
