@@ -20,7 +20,7 @@ pub mod websocket {
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
-    use crate::gstreamer::{ToWs};
+    use crate::gstreamer::{StreamSSRCs, ToWs};
     use crate::receive::{SocketListenerCommand, StreamResolutionInformation};
 
     const API_VERSION: u8 = 7;
@@ -103,9 +103,7 @@ pub mod websocket {
                     let nonce_arc = nonce.clone();
 
                     // Clone Strings to move across threads
-                    let rtc_connection_id = rtc_connection_id.clone();
                     let ip = ip.clone();
-                    let max_resolution = max_resolution.clone();
 
                     async move {
                         let mut msg = match msg {
@@ -230,6 +228,10 @@ pub mod websocket {
             }
 
             let ws_data = from_gst_rx.recv().await.unwrap();
+            debug!("Got data from gst: {:?}", ws_data);
+
+            Self::send_stream_information(ws_write.clone().lock().await.borrow_mut(), ws_data, GatewayResolution::from_socket_info(max_resolution), max_framerate, rtc_connection_id).await.expect("Failed to send stream information");
+
 
             Ok(Self { task: Some(ws_listener_task), heartbeat_task })
         }
@@ -282,26 +284,22 @@ pub mod websocket {
         #[tracing::instrument]
         async fn send_partial_stream_information(
             write: &mut WebSocketWrite,
-            audio_ssrc: u32,
-            rtx_ssrc: u32,
-            video_ssrc: u32,
-            local_sdp: String,
+            ssrcs: StreamSSRCs,
             max_resolution: GatewayResolution,
             max_framerate: u8,
-            active: bool,
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
             let ws12 = OutgoingWebsocketMessage::OpCode12(OpCode12 {
-                audio_ssrc,
-                rtx_ssrc,
-                video_ssrc,
+                audio_ssrc: ssrcs.audio,
+                rtx_ssrc: ssrcs.rtx,
+                video_ssrc: ssrcs.video,
                 streams: vec![
                     GatewayStream {
                         stream_type: "video".to_string(),
                         rid: "100".to_string(),
                         quality: 100,
-                        active: Some(active),
-                        ssrc: Some(audio_ssrc),
-                        rtx_ssrc: Some(rtx_ssrc),
+                        active: Some(true),
+                        ssrc: Some(ssrcs.video),
+                        rtx_ssrc: Some(ssrcs.rtx),
                         max_bitrate: Some(MAX_BITRATE),
                         max_framerate: Some(max_framerate),
                         max_resolution: Some(max_resolution),
@@ -318,29 +316,11 @@ pub mod websocket {
         #[tracing::instrument]
         async fn send_stream_information(
             write: &mut WebSocketWrite,
-            audio_ssrc: u32,
-            rtx_ssrc: u32,
-            video_ssrc: u32,
-            local_sdp: String,
+            web_rtc_data: ToWs,
             max_resolution: GatewayResolution,
             max_framerate: u8,
-            port: u16,
-            rtc_connection_id: String,
-            endpoint: String,
-            ip: String,
-            sdp_client_data: String,
+            rtc_connection_id: String
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
-            Self::send_partial_stream_information(
-                write,
-                audio_ssrc,
-                rtx_ssrc,
-                video_ssrc,
-                local_sdp.clone(),
-                max_resolution.clone(),
-                max_framerate,
-                false,
-            ).await?;
-
             let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 {
                 protocol: "webrtc".to_string(),
                 rtc_connection_id,
@@ -349,19 +329,19 @@ pub mod websocket {
                         name: "H264".to_string(),
                         codec_type: PayloadType::Video,
                         priority: 1000,
-                        payload_type: 101,
-                        rtx_payload_type: Some(102),
+                        payload_type: 127,
+                        rtx_payload_type: None,
                     },
                     GatewayCodec {
                         name: "opus".to_string(),
                         codec_type: PayloadType::Audio,
                         priority: 1000,
-                        payload_type: 120,
+                        payload_type: 111,
                         rtx_payload_type: None,
                     },
                 ],
-                data: sdp_client_data.clone(),
-                sdp: sdp_client_data,
+                data: web_rtc_data.local_sdp.clone(),
+                sdp: web_rtc_data.local_sdp,
             }).to_json();
 
             trace!("[STREAM] {ws1}");
@@ -371,24 +351,10 @@ pub mod websocket {
             // TODO: clean this up
             Self::send_partial_stream_information(
                 write,
-                audio_ssrc,
-                rtx_ssrc,
-                video_ssrc,
-                local_sdp,
-                max_resolution.clone(),
-                max_framerate,
-                false,
-            ).await?;
-
-            /*Self::send_partial_stream_information(
-                write,
-                audio_ssrc,
-                rtx_ssrc,
-                video_ssrc,
+                web_rtc_data.ssrcs,
                 max_resolution,
-                max_framerate,
-                true
-            ).await?;*/
+                max_framerate
+            ).await?;
 
             Ok(())
         }
