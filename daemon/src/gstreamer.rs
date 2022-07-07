@@ -1,13 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use async_std::task;
-use gst::ffi::gst_object_unref;
-use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, PromiseError, StateChangeError, StateChangeSuccess, StructureRef};
-use gst::ffi::GstStructure;
+use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
-use gst_sdp::SDPMessage;
-use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
-use gst_webrtc::WebRTCSDPType::Offer;
+use gst_webrtc::{WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
@@ -31,6 +27,17 @@ pub struct StreamSSRCs {
     pub rtx: u32,
 }
 
+#[derive(Debug)]
+pub struct ToWs {
+    pub ssrcs: StreamSSRCs,
+    pub local_sdp: String,
+}
+
+#[derive(Debug)]
+pub struct ToGst {
+    pub remote_sdp: String,
+}
+
 impl std::fmt::Display for GstInitializationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
@@ -50,27 +57,6 @@ pub enum VideoEncoderType {
     H264(H264Settings),
     VP8,
     VP9,
-}
-
-//Allowing non camel case names for this struct to match the discord encryption algorithm names
-#[allow(non_camel_case_types)]
-#[derive(Debug, serde::Deserialize, serde::Serialize)]
-pub enum EncryptionAlgorithm {
-    aead_aes256_gcm
-}
-
-impl EncryptionAlgorithm {
-    pub fn to_gst_str(&self) -> &'static str {
-        match self {
-            EncryptionAlgorithm::aead_aes256_gcm => "aes-256-gcm",
-        }
-    }
-
-    pub fn to_discord_str(&self) -> &'static str {
-        match self {
-            EncryptionAlgorithm::aead_aes256_gcm => "aead_aes256_gcm",
-        }
-    }
 }
 
 impl From<glib::Error> for GstInitializationError {
@@ -128,7 +114,7 @@ impl GstHandle {
     /// # Arguments
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData, tx: async_std::channel::Sender<StreamSSRCs>,
+        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData, to_ws_tx: async_std::channel::Sender<ToWs>,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;
@@ -249,17 +235,17 @@ impl GstHandle {
         }
          */
 
-
         webrtcbin.connect("on-negotiation-needed", false, move |value| {
+            let to_ws_tx = to_ws_tx.clone();
             info!("[WebRTC] Negotiation needed");
 
             let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
 
             let create_offer_options = gst::Structure::new_empty("create_offer_options");
 
-            {
-                let webrtcbin_clone = webrtcbin.clone();
-                webrtcbin.lock().unwrap().emit_by_name::<()>("create-offer", &[&create_offer_options, &Promise::with_change_func(move |result| {
+            webrtcbin.lock().unwrap().emit_by_name::<()>("create-offer", &[&create_offer_options, &Promise::with_change_func({
+                let webrtcbin = webrtcbin.clone();
+                move |result| {
                     match result {
                         Ok(offer) => {
                             info!("[WebRTC] Offer created");
@@ -269,39 +255,56 @@ impl GstHandle {
                             let sdp = session_description.sdp().as_text().unwrap().replace("\r\n", "\n");
                             trace!("[WebRTC] Offer: {:?}", sdp);
 
-                            webrtcbin_clone.lock().unwrap().emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
+                            let mut video_ssrc: u32 = 0;
+                            let mut audio_ssrc: u32= 0;
+                            let mut rtx_ssrc: u32= 0;
+
+
+                            {
+                                let webrtcbin = webrtcbin.lock().unwrap();
+                                webrtcbin.emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
+
+                                let video_pad = webrtcbin.static_pad("sink_0").unwrap();
+                                let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
+
+                                video_ssrc = get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap_or(0);
+                                audio_ssrc = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
+                            }
+
                             info!("[WebRTC] Local description set");
-                            //TODO: send sdp.as_str() to the websocket
+                            trace!("[WebRTC] Video SSRC: {:?}", video_ssrc);
+                            trace!("[WebRTC] Audio SSRC: {:?}", audio_ssrc);
+                            trace!("[WebRTC] RTX SSRC: {:?}", rtx_ssrc);
+
+
+                            match task::block_on(to_ws_tx.send(ToWs {
+                                ssrcs: StreamSSRCs {
+                                    audio: audio_ssrc,
+                                    video: video_ssrc,
+                                    rtx: rtx_ssrc,
+                                },
+                                local_sdp: sdp,
+                            })) {
+                                Ok(_) => {
+                                    debug!("[WebRTC->WS] SDP and SSRCs sent to websocket");
+                                }
+                                Err(e) => {
+                                    error!("[WebRTC] Failed to send local SDP and SSRCs to websocket: {:?}", e);
+                                }
+                            };
                         }
                         Err(error) => {
                             error!("[WebRTC] Failed to create offer: {:?}", error);
                             //TODO: Return an error to the new call by making this method async or blocking (Preferably async)
                         }
                     }
-                })]);
-            }
-
-            /*
-            let video_pad = webrtcbin.static_pad("sink_0").unwrap();
-            let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
-            debug!("WebRTC negotiation finished, sending ssrcs");
-
-            let _ = task::block_on(tx.send(StreamSSRCs {
-                audio: get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap(),
-                video: get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap(),
-                rtx: 0,
-            }));
-            */
-            let _ = task::block_on(tx.send(StreamSSRCs {
-                audio: 0,
-                video: 0,
-                rtx: 0,
-            }));
+                }
+            })]);
             None
         });
 
         /*
-        OLD CODE TO SET local and remote description:
+        OLD CODE TO SET remote description:
 
         let mut sdp_message = SDPMessage::new();
         sdp_message.set_uri(sdp_server);

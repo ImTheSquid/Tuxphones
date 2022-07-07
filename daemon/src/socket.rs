@@ -185,6 +185,7 @@ pub mod send {
     #[serde(tag = "type")]
     pub struct StreamStop {}
 
+    #[derive(Debug)]
     pub enum SocketError {
         ConnectionFailed,
         NoRuntimeDir,

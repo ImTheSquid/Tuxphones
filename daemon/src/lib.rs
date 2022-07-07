@@ -1,5 +1,6 @@
 use std::{sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, thread};
-use async_std::task;
+use std::process::Command;
+use async_std::{channel, task};
 
 use pulse::PulseHandle;
 use socket::{receive::SocketListenerCommand, send::Application};
@@ -20,8 +21,7 @@ mod discord_op;
 
 pub use socket::receive;
 use crate::discord::websocket::WebsocketConnection;
-
-use crate::gstreamer::EncryptionAlgorithm;
+use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 pub struct CommandProcessor {
     thread: Option<thread::JoinHandle<()>>
@@ -49,6 +49,7 @@ impl CommandProcessor {
             };
 
             let mut ws: Option<WebsocketConnection> = None;
+            let mut stream: Option<GstHandle> = None;
 
             loop {
                 if !run.load(Ordering::SeqCst) {
@@ -92,18 +93,41 @@ impl CommandProcessor {
                                     }
                                 }
 
+
+                                let (to_ws_tx, from_gst_rx): (channel::Sender<ToWs>, channel::Receiver<ToWs>) = channel::unbounded();
+
+                                // Quick and drity check to try to detect Nvidia drivers
+                                //TODO: Find a better way to do this
+                                let nvidia_encoder = if let Some(out) = Command::new("lspci").arg("-nnk").output().ok() {
+                                    String::from_utf8_lossy(&out.stdout).contains("nvidia")
+                                } else { false };
+
+                                stream = match GstHandle::new(
+                                    VideoEncoderType::H264(H264Settings { nvidia_encoder }),
+                                    xid,
+                                    resolution.clone(),
+                                    framerate.into(),
+                                    *ice,
+                                    to_ws_tx
+                                ) {
+                                    Ok(gst_handle) => Some(gst_handle),
+                                    Err(e) => {
+                                        error!("Failed to create gstreamer handle: {:?}", e);
+                                        continue;
+                                    }
+                                };
+
                                 ws = match task::block_on(WebsocketConnection::new(
                                     endpoint,
                                     framerate,
                                     resolution,
                                     rtc_connection_id,
                                     ip,
-                                    xid,
                                     server_id,
                                     session_id,
                                     token,
-                                    *ice,
                                     user_id,
+                                    from_gst_rx,
                                     ws_sender.clone()
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),
@@ -129,7 +153,7 @@ impl CommandProcessor {
                                 // If stream was stopped internally, send a notification to the client
                                 if cmd == SocketListenerCommand::StopStreamInternal {
                                     if let Err(e) = socket::send::stream_stop_internal() {
-                                        error!("Failed to notify client of internal stream stop: {e}");
+                                        error!("Failed to notify client of internal stream stop: {:?}", e);
                                     }
                                 }
                             },

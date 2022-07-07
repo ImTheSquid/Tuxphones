@@ -2,7 +2,7 @@ pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
     use serde_json::Value;
-    use crate::{EncryptionAlgorithm, receive::StreamResolutionInformation};
+    use crate::{receive::StreamResolutionInformation};
 
     lazy_static! {
         static ref OPCODE_OUTGOING_REGEX: Regex = Regex::new(r#""op":"(?P<op>\d+)""#).unwrap();
@@ -130,16 +130,6 @@ pub mod opcodes {
         pub rtx_payload_type: Option<u8>
     }
 
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub struct OpCode1Data {
-        /// My public ip address obtainable with an UDP IP discovery message
-        pub address: String,
-        /// Encryption algorithm to use
-        pub mode: EncryptionAlgorithm,
-        /// My public port obtainable with an UDP IP discovery message
-        pub port: u16,
-    }
-
     /// Outgoing message containing info about the stream
     #[derive(serde::Serialize, Debug)]
     pub struct OpCode1 {
@@ -150,16 +140,18 @@ pub mod opcodes {
         pub sdp: String
     }
 
-    /// Incoming message containing configuration options for webrtc connection
+    /// Incoming message containing configuration options for webrtc connection (This is not used by this program)
     #[derive(serde::Deserialize, Debug)]
     pub struct OpCode2 {
-        /// Discord ip address to stream to
+        /// NOT USED SINCE THIS PROGRAM IS USING WebRTC
         pub ip: String,
-        /// Discord port to stream to
+        /// NOT USED SINCE THIS PROGRAM IS USING WebRTC
         pub port: u16,
-        /// Supported encrpytion modes by the server
+        /// Supported encryption modes by the server (NOT USED SINCE THIS PROGRAM IS USING WebRTC to choose the encryption mode)
         pub modes: Vec<String>,
+        /// Not used by us since we're getting those from webrtc
         pub ssrc: u32,
+        /// NOT USED SINCE THIS PROGRAM IS USING WebRTC
         pub streams: Vec<GatewayStream>
     }
 
@@ -182,6 +174,7 @@ pub mod opcodes {
         pub audio_codec: AudioCodec,
         /// Unknown value
         pub media_session_id: String,
+        /// Remote sdp
         pub sdp: String,
         pub video_codec: String
     }
@@ -204,13 +197,14 @@ pub mod opcodes {
         pub streams: Vec<GatewayStream>,
     }
 
+    //TODO: Check if is needed to send opcode 12 again after this message
     ///  Unknown outgoing message
     #[derive(serde::Deserialize, Debug)]
     pub struct OpCode15 {
         pub any: u8,
     }
 
-    // Version information
+    /// Version information
     #[derive(serde::Deserialize, Debug)]
     pub struct OpCode16 {
         pub voice: String,
