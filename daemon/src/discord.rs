@@ -330,7 +330,7 @@ pub mod websocket {
                         codec_type: PayloadType::Video,
                         priority: 1000,
                         payload_type: 127,
-                        rtx_payload_type: None,
+                        rtx_payload_type: Some(121),
                     },
                     GatewayCodec {
                         name: "opus".to_string(),
