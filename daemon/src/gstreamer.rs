@@ -7,7 +7,7 @@ use gst_webrtc::{WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
-use crate::{receive::StreamResolutionInformation, xid};
+use crate::{receive::StreamResolutionInformation, ToGst, xid};
 use crate::receive::IceData;
 
 //Gstreamer handles count to prevent deinitialization of gstreamer
@@ -31,11 +31,6 @@ pub struct StreamSSRCs {
 pub struct ToWs {
     pub ssrcs: StreamSSRCs,
     pub local_sdp: String,
-}
-
-#[derive(Debug)]
-pub struct ToGst {
-    pub remote_sdp: String,
 }
 
 impl std::fmt::Display for GstInitializationError {
@@ -115,7 +110,7 @@ impl GstHandle {
     /// # Arguments
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub fn new(
-        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData, to_ws_tx: async_std::channel::Sender<ToWs>,
+        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData, to_ws_tx: async_std::channel::Sender<ToWs>, from_ws_rx: async_std::channel::Receiver<ToGst>,
     ) -> Result<Self, GstInitializationError> {
         gst::init()?;
         *HANDLES_COUNT.lock().unwrap() += 1;

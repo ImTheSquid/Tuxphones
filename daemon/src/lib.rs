@@ -13,7 +13,7 @@ use x::XServerHandle;
 use u32 as pid;
 use u32 as xid;
 
-use crate::discord::websocket::WebsocketConnection;
+use crate::discord::websocket::{ToGst, WebsocketConnection};
 use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 mod pulse;
@@ -95,6 +95,7 @@ impl CommandProcessor {
 
 
                                 let (to_ws_tx, from_gst_rx): (channel::Sender<ToWs>, channel::Receiver<ToWs>) = channel::unbounded();
+                                let (to_gst_tx, from_ws_rx): (channel::Sender<ToGst>, channel::Receiver<ToGst>) = channel::unbounded();
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 //TODO: Find a better way to do this
@@ -109,6 +110,7 @@ impl CommandProcessor {
                                     framerate.into(),
                                     *ice,
                                     to_ws_tx,
+                                    from_ws_rx
                                 ).expect("Failed to initialize gstreamer pipeline");
                                 gst.start().expect("Failed to start stream");
 
@@ -125,6 +127,7 @@ impl CommandProcessor {
                                     token,
                                     user_id,
                                     from_gst_rx,
+                                    to_gst_tx,
                                     ws_sender.clone(),
                                 )) {
                                     Ok(ws_handle) => Some(ws_handle),

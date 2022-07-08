@@ -38,6 +38,11 @@ pub mod websocket {
         heartbeat_task: Arc<Mutex<Option<JoinHandle<()>>>>,
     }
 
+    #[derive(Debug)]
+    pub struct ToGst{
+        remote_sdp: String
+    }
+
     impl Drop for WebsocketConnection {
         fn drop(&mut self) {
             info!("Closing websocket connection");
@@ -68,6 +73,7 @@ pub mod websocket {
             token: String,
             user_id: String,
             from_gst_rx: channel::Receiver<ToWs>,
+            to_gst_tx: channel::Sender<ToGst>,
             command_sender: Sender<SocketListenerCommand>,
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
