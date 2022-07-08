@@ -307,6 +307,7 @@ impl GstHandle {
                                 sdp_message,
                             );
                             webrtcbin.lock().unwrap().emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
+                            debug!("[WebRTC] Remote description set");
                         }
                         Err(error) => {
                             error!("[WebRTC] Failed to create offer: {:?}", error);
