@@ -41,7 +41,7 @@ pub mod websocket {
 
     #[derive(Debug)]
     pub struct ToGst{
-        remote_sdp: String
+        pub remote_sdp: String
     }
 
     impl Drop for WebsocketConnection {

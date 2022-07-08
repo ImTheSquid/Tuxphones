@@ -1,9 +1,11 @@
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
-use gst_webrtc::{WebRTCSessionDescription};
+use gst_sdp::SDPMessage;
+use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
@@ -233,6 +235,7 @@ impl GstHandle {
 
         webrtcbin.connect("on-negotiation-needed", false, move |value| {
             let to_ws_tx = to_ws_tx.clone();
+            let from_ws_rx = from_ws_rx.clone();
             info!("[WebRTC] Negotiation needed");
 
             let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
@@ -289,6 +292,21 @@ impl GstHandle {
                                     error!("[WebRTC] Failed to send local SDP and SSRCs to websocket: {:?}", e);
                                 }
                             };
+
+                            let from_ws = task::block_on(from_ws_rx.recv()).unwrap();
+                            debug!("[WebRTC] Received remote SDP from ws");
+                            trace!("[WebRTC] Remote SDP: {:?}", from_ws.remote_sdp);
+
+                            let mut sdp_message = SDPMessage::new();
+                            sdp_message.set_uri(&from_ws.remote_sdp);
+
+                            trace!("[WebRTC] Parsed remote SDP: {:?}", sdp_message.as_text().unwrap());
+
+                            let webrtc_desc = WebRTCSessionDescription::new(
+                                WebRTCSDPType::Answer,
+                                sdp_message,
+                            );
+                            webrtcbin.lock().unwrap().emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
                         }
                         Err(error) => {
                             error!("[WebRTC] Failed to create offer: {:?}", error);
