@@ -91,20 +91,9 @@ impl Drop for GstHandle {
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
         std::fs::write("/tmp/tuxphones_gstdrop.dot", out.as_str()).unwrap();
 
-        self.pipeline.send_event(gst::event::Eos::new());
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
             error!("Failed to stop pipeline: {:?}", e);
         };
-
-        //Gst should be destroyed only when there are no more handles
-        if *handles_count > 0 {
-            *handles_count -= 1;
-            if *handles_count == 0 {
-                unsafe {
-                    gst::deinit();
-                }
-            }
-        }
     }
 }
 
@@ -114,9 +103,6 @@ impl GstHandle {
     pub fn new(
         encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData, to_ws_tx: async_std::channel::Sender<ToWs>, from_ws_rx: async_std::channel::Receiver<ToGst>,
     ) -> Result<Self, GstInitializationError> {
-        gst::init()?;
-        *HANDLES_COUNT.lock().unwrap() += 1;
-
         //Create a new GStreamer pipeline
         let pipeline = gst::Pipeline::new(None);
 

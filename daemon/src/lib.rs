@@ -48,6 +48,8 @@ impl CommandProcessor {
                 }
             };
 
+            let mut gst_is_loaded = false;
+
             let mut ws: Option<WebsocketConnection> = None;
             let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
 
@@ -55,6 +57,10 @@ impl CommandProcessor {
                 if !run.load(Ordering::SeqCst) {
                     // Kill websocket if still running
                     ws.take();
+                    stream.lock().unwrap().take();
+                    if gst_is_loaded {
+                        unsafe {gst::deinit();}
+                    }
                     info!("Command processor shut down");
                     break;
                 }
@@ -102,6 +108,11 @@ impl CommandProcessor {
                                 let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
                                     String::from_utf8_lossy(&out.stdout).contains("nvidia")
                                 } else { false };
+
+                                if !gst_is_loaded {
+                                    gst_is_loaded = true;
+                                    gst::init().expect("Failed to intialize gstreamer");
+                                }
 
                                 let gst = GstHandle::new(
                                     VideoEncoderType::H264(H264Settings { nvidia_encoder }),

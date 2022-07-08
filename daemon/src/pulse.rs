@@ -84,6 +84,7 @@ impl std::fmt::Display for PulseCaptureError {
 
 impl Drop for PulseHandle {
     fn drop(&mut self) {
+        self.stop_capture();
         if self.audio_is_setup {
             self.teardown_audio_capture();
         }
