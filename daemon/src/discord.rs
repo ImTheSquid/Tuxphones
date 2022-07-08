@@ -6,6 +6,7 @@ pub mod websocket {
     use std::time::Duration;
 
     use async_std::{channel, task};
+    use async_std::channel::SendError;
     use async_std::sync::Mutex;
     use async_std::task::JoinHandle;
     use async_tungstenite::async_std::{connect_async, ConnectStream};
@@ -108,6 +109,8 @@ pub mod websocket {
                     let op15_count = op15_count.clone();
                     let nonce_arc = nonce.clone();
 
+                    let to_gst_tx = to_gst_tx.clone();
+
                     // Clone Strings to move across threads
                     let ip = ip.clone();
 
@@ -153,6 +156,17 @@ pub mod websocket {
 
                         match msg {
                             IncomingWebsocketMessage::OpCode4(data) => {
+                                match to_gst_tx.send(ToGst {
+                                    remote_sdp: data.sdp
+                                }).await {
+                                    Ok(_) => {
+                                        debug!("[WS->WebRTC] remote SDP sent to gst");
+                                    }
+                                    Err(e) => {
+                                        //TODO: Handle error
+                                        debug!("Failed to send remote SDP to gst: {:?}", e);
+                                    }
+                                };
                                 /*
                                 task::spawn({
                                     let ws_write = ws_write.clone();

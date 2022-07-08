@@ -285,6 +285,7 @@ impl GstHandle {
                                     debug!("[WebRTC->WS] SDP and SSRCs sent to websocket");
                                 }
                                 Err(e) => {
+                                    //TODO: Handle error
                                     error!("[WebRTC] Failed to send local SDP and SSRCs to websocket: {:?}", e);
                                 }
                             };
