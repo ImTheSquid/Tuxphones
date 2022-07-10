@@ -375,12 +375,9 @@ fn get_filtered_sdp(sdp: String) -> String {
 
             let mut tokens = line.split(' ').collect::<Vec<&str>>();
 
-            if tokens[2] == "tcp" {
+            if tokens[2] == "TCP" {
                 return None;
             }
-
-            let uppercase_protocol = tokens[2].to_uppercase();
-            tokens[2] = uppercase_protocol.as_str();
 
             Some(tokens.join(" "))
         }).collect::<Vec<String>>().join("\n")
