@@ -1,19 +1,15 @@
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
-use gst_webrtc::{WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCICEGatheringState, WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
 use crate::{receive::StreamResolutionInformation, ToGst, xid};
 use crate::receive::IceData;
-
-//Gstreamer handles count to prevent deinitialization of gstreamer
-static HANDLES_COUNT: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
 #[derive(Debug)]
 pub enum GstInitializationError {
@@ -85,8 +81,6 @@ pub struct GstHandle {
 impl Drop for GstHandle {
     fn drop(&mut self) {
         info!("dropping GstHandle");
-        let mut handles_count = HANDLES_COUNT.lock().unwrap();
-
         // Debug diagram
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
         std::fs::write("/tmp/tuxphones_gstdrop.dot", out.as_str()).unwrap();
@@ -220,8 +214,6 @@ impl GstHandle {
          */
 
         webrtcbin.connect("on-negotiation-needed", false, move |value| {
-            let to_ws_tx = to_ws_tx.clone();
-            let from_ws_rx = from_ws_rx.clone();
             info!("[WebRTC] Negotiation needed");
 
             let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
@@ -239,61 +231,7 @@ impl GstHandle {
 
                             let sdp = session_description.sdp().as_text().unwrap().replace("\r\n", "\n");
                             trace!("[WebRTC] Offer: {:?}", sdp);
-
-                            let mut video_ssrc: u32 = 0;
-                            let mut audio_ssrc: u32= 0;
-                            let mut rtx_ssrc: u32= 0;
-
-
-                            {
-                                let webrtcbin = webrtcbin.lock().unwrap();
-                                webrtcbin.emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
-
-                                let video_pad = webrtcbin.static_pad("sink_0").unwrap();
-                                let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
-
-                                video_ssrc = get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap_or(0);
-                                audio_ssrc = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
-                            }
-
-                            info!("[WebRTC] Local description set");
-                            trace!("[WebRTC] Video SSRC: {:?}", video_ssrc);
-                            trace!("[WebRTC] Audio SSRC: {:?}", audio_ssrc);
-                            trace!("[WebRTC] RTX SSRC: {:?}", rtx_ssrc);
-
-
-                            match task::block_on(to_ws_tx.send(ToWs {
-                                ssrcs: StreamSSRCs {
-                                    audio: audio_ssrc,
-                                    video: video_ssrc,
-                                    rtx: rtx_ssrc,
-                                },
-                                local_sdp: sdp,
-                            })) {
-                                Ok(_) => {
-                                    debug!("[WebRTC->WS] SDP and SSRCs sent to websocket");
-                                }
-                                Err(e) => {
-                                    //TODO: Handle error
-                                    error!("[WebRTC] Failed to send local SDP and SSRCs to websocket: {:?}", e);
-                                }
-                            };
-
-                            let from_ws = task::block_on(from_ws_rx.recv()).unwrap();
-                            debug!("[WebRTC] Received remote SDP from ws");
-                            trace!("[WebRTC] Remote SDP: {:?}", from_ws.remote_sdp);
-
-                            let mut sdp_message = SDPMessage::new();
-                            sdp_message.set_uri(&from_ws.remote_sdp);
-
-                            trace!("[WebRTC] Parsed remote SDP: {:?}", sdp_message.as_text().unwrap());
-
-                            let webrtc_desc = WebRTCSessionDescription::new(
-                                WebRTCSDPType::Answer,
-                                sdp_message,
-                            );
-                            webrtcbin.lock().unwrap().emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
-                            debug!("[WebRTC] Remote description set");
+                            webrtcbin.lock().unwrap().emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
                         }
                         Err(error) => {
                             error!("[WebRTC] Failed to create offer: {:?}", error);
@@ -304,6 +242,73 @@ impl GstHandle {
             })]);
             None
         });
+
+        #[cfg(debug_assertions)]
+        webrtcbin.connect("on-ice-candidate", true, move |value| {
+            //let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
+            let candidate = value[2].get::<String>();
+            debug!("[WebRTC] ICE candidate received: {:?}", candidate);
+            None
+        });
+
+        webrtcbin.connect_notify(Some("ice-gathering-state"), move |webrtcbin, _| {
+            let to_ws_tx = to_ws_tx.clone();
+            let from_ws_rx = from_ws_rx.clone();
+
+            let state = webrtcbin.property::<WebRTCICEGatheringState>("ice-gathering-state");
+            debug!("[WebRTC] ICE gathering state changed: {:?}", state);
+            if state == WebRTCICEGatheringState::Complete {
+                let local_description = webrtcbin.property::<WebRTCSessionDescription>("local-description");
+                let sdp_filtered = get_filtered_sdp(local_description.sdp().as_text().unwrap());
+
+                let video_pad = webrtcbin.static_pad("sink_0").unwrap();
+                let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
+
+                let video_ssrc: u32 = get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap_or(0);
+                let audio_ssrc: u32 = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
+                let rtx_ssrc: u32 = 0;
+
+                info!("[WebRTC] Local description set");
+                trace!("[WebRTC] Video SSRC: {:?}", video_ssrc);
+                trace!("[WebRTC] Audio SSRC: {:?}", audio_ssrc);
+                trace!("[WebRTC] RTX SSRC: {:?}", rtx_ssrc);
+
+
+                match task::block_on(to_ws_tx.send(ToWs {
+                    ssrcs: StreamSSRCs {
+                        audio: audio_ssrc,
+                        video: video_ssrc,
+                        rtx: rtx_ssrc,
+                    },
+                    local_sdp: sdp_filtered,
+                })) {
+                    Ok(_) => {
+                        debug!("[WebRTC->WS] SDP and SSRCs sent to websocket");
+                    }
+                    Err(e) => {
+                        //TODO: Handle error
+                        error!("[WebRTC] Failed to send local SDP and SSRCs to websocket: {:?}", e);
+                    }
+                };
+
+                let from_ws = task::block_on(from_ws_rx.recv()).unwrap();
+                debug!("[WebRTC] Received remote SDP from ws");
+                trace!("[WebRTC] Remote SDP: {:?}", from_ws.remote_sdp);
+
+                let mut sdp_message = SDPMessage::new();
+                sdp_message.set_uri(&from_ws.remote_sdp);
+
+                trace!("[WebRTC] Parsed remote SDP: {:?}", sdp_message.as_text().unwrap());
+
+                let webrtc_desc = WebRTCSessionDescription::new(
+                    WebRTCSDPType::Answer,
+                    sdp_message,
+                );
+                webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
+                debug!("[WebRTC] Remote description set");
+            }
+        });
+
 
         /*
         OLD CODE TO SET remote description:
@@ -359,4 +364,24 @@ pub fn get_cap_value_from_str<'l, T: glib::value::FromValue<'l>>(caps: &'l gst::
         Ok(value) => Some(value),
         Err(_) => None,
     }
+}
+
+fn get_filtered_sdp(sdp: String) -> String {
+    sdp.split("\r\n")
+        .filter_map(|line| {
+            if !line.starts_with("a=candidate") {
+                return Some(line.to_string());
+            }
+
+            let mut tokens = line.split(' ').collect::<Vec<&str>>();
+
+            if tokens[2] == "tcp" {
+                return None;
+            }
+
+            let uppercase_protocol = tokens[2].to_uppercase();
+            tokens[2] = uppercase_protocol.as_str();
+
+            Some(tokens.join(" "))
+        }).collect::<Vec<String>>().join("\n")
 }
