@@ -194,6 +194,7 @@ impl GstHandle {
 
         //Create a new webrtcbin to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
+        webrtcbin.set_property_from_str("bundle-policy", "max-bundle");
 
         //TODO: Use filter_map instead
         let stun_server = ice.urls.iter().find(|url| url.starts_with("stun:")).unwrap().replace("stun:", "stun://");
