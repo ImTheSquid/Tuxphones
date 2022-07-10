@@ -13,7 +13,7 @@ use x::XServerHandle;
 use u32 as pid;
 use u32 as xid;
 
-use crate::discord::websocket::{ToGst, WebsocketConnection};
+use crate::{discord::websocket::{ToGst, WebsocketConnection}, x::XResizeWatcher};
 use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 mod pulse;
@@ -50,6 +50,7 @@ impl CommandProcessor {
 
             let mut gst_is_loaded = false;
 
+            let mut resize_watcher = None;
             let mut ws: Option<WebsocketConnection> = None;
             let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
 
@@ -102,6 +103,15 @@ impl CommandProcessor {
 
                                 let (to_ws_tx, from_gst_rx): (channel::Sender<ToWs>, channel::Receiver<ToWs>) = channel::unbounded();
                                 let (to_gst_tx, from_ws_rx): (channel::Sender<ToGst>, channel::Receiver<ToGst>) = channel::unbounded();
+                                let (gst_resize_tx, gst_resize_rx) = channel::unbounded();
+
+                                let _ = resize_watcher.insert(match XResizeWatcher::new(xid, gst_resize_tx, Duration::from_secs(1)) {
+                                    Ok(watcher) => watcher,
+                                    Err(e) => {
+                                        error!("Failed to start resize watcher: {}", e);
+                                        continue;
+                                    }
+                                });
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 //TODO: Find a better way to do this
@@ -156,6 +166,8 @@ impl CommandProcessor {
                                 // Kill gstreamer and ws
                                 ws.take();
                                 stream.lock().unwrap().take();
+
+                                resize_watcher.take();
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();
