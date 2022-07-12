@@ -4,7 +4,7 @@ use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
 use gst_sdp::SDPMessage;
-use gst_webrtc::{WebRTCICEGatheringState, WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
@@ -189,10 +189,9 @@ impl GstHandle {
         //Opus encapsulator for rtp
         let rtpopuspay = gst::ElementFactory::make("rtpopuspay", None)?;
 
-
         //--DESTINATION--
 
-        //Create a new webrtcbin to connect the pipeline to the WebRTC peer
+        //Create a new Ti i to connect the pipeline to the WebRTC peer
         let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         webrtcbin.set_property_from_str("bundle-policy", "max-bundle");
 
@@ -340,6 +339,9 @@ impl GstHandle {
 
         //Link video elements
         Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_webrtc_queue, &webrtcbin])?;
+
+        //Setting do-nack on webrtcbin video webrtctransceiver to true for rtx
+        webrtcbin.static_pad("sink_0").unwrap().property::<WebRTCRTPTransceiver>("transceiver").set_property("do-nack", true);
 
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, &audio_webrtc_queue, &webrtcbin])?;
