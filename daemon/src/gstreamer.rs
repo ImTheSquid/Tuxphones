@@ -164,6 +164,7 @@ impl GstHandle {
         };
 
 
+
         //--AUDIO--
 
         // Caps filter for audio from conversion to encoding
@@ -212,6 +213,51 @@ impl GstHandle {
             webrtcbin.emit_by_name::<bool>("add-turn-server", &[&turn_server]);
         }
          */
+
+        //queues
+        let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
+        let audio_encoder_queue = gst::ElementFactory::make("queue", None)?;
+        let video_webrtc_queue = gst::ElementFactory::make("queue", None)?;
+        let audio_webrtc_queue = gst::ElementFactory::make("queue", None)?;
+
+        let video_payload_caps = gst::ElementFactory::make("capsfilter", None)?;
+        //Create a vector containing the option of the gst caps
+        //TODO: Use a const for this since is the same that should be sent through the websocket with the opcode 1
+        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("payload", &127)];
+
+        video_payload_caps.set_property("caps", &gst::Caps::new_simple(
+            "application/x-rtp",
+            caps_options.as_ref(),
+        ));
+
+        let audio_payload_caps = gst::ElementFactory::make("capsfilter", None)?;
+        //Create a vector containing the option of the gst caps
+        //TODO: Use a const for this since is the same that should be sent through the websocket with the opcode 1
+        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("payload", &111)];
+
+        audio_payload_caps.set_property("caps", &gst::Caps::new_simple(
+            "application/x-rtp",
+            caps_options.as_ref(),
+        ));
+
+
+        //Add elements to the pipeline
+        pipeline.add_many(&[
+            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay, &video_payload_caps,
+            &video_encoder_queue, &video_webrtc_queue,
+            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay, &audio_payload_caps,
+            &audio_encoder_queue, &audio_webrtc_queue,
+            &webrtcbin])?;
+
+        //Link video elements
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_payload_caps, &video_webrtc_queue, &webrtcbin])?;
+
+        //Setting do-nack on webrtcbin video webrtctransceiver to true for rtx
+        let video_transceiver = webrtcbin.static_pad("sink_0").unwrap().property::<WebRTCRTPTransceiver>("transceiver");
+        video_transceiver.set_property("do-nack", true);
+
+        //Link audio elements
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, &audio_payload_caps, &audio_webrtc_queue, &webrtcbin])?;
 
         webrtcbin.connect("on-negotiation-needed", false, move |value| {
             info!("[WebRTC] Negotiation needed");
@@ -268,6 +314,8 @@ impl GstHandle {
                 let audio_ssrc: u32 = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
                 let rtx_ssrc: u32 = 0;
 
+                trace!("[WebRTC] Transcirver: {:?}", video_transceiver);
+
                 info!("[WebRTC] Local description set");
                 trace!("[WebRTC] Video SSRC: {:?}", video_ssrc);
                 trace!("[WebRTC] Audio SSRC: {:?}", audio_ssrc);
@@ -308,43 +356,6 @@ impl GstHandle {
                 debug!("[WebRTC] Remote description set");
             }
         });
-
-
-        /*
-        OLD CODE TO SET remote description:
-
-        let mut sdp_message = SDPMessage::new();
-        sdp_message.set_uri(sdp_server);
-        let webrtc_desc = WebRTCSessionDescription::new(
-            WebRTCSDPType::Answer,
-            sdp_message,
-        );
-        webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
-
-         */
-
-        //queues
-        let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
-        let audio_encoder_queue = gst::ElementFactory::make("queue", None)?;
-        let video_webrtc_queue = gst::ElementFactory::make("queue", None)?;
-        let audio_webrtc_queue = gst::ElementFactory::make("queue", None)?;
-
-        //Add elements to the pipeline
-        pipeline.add_many(&[
-            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay,
-            &video_encoder_queue, &video_webrtc_queue,
-            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay,
-            &audio_encoder_queue, &audio_webrtc_queue,
-            &webrtcbin])?;
-
-        //Link video elements
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_webrtc_queue, &webrtcbin])?;
-
-        //Setting do-nack on webrtcbin video webrtctransceiver to true for rtx
-        webrtcbin.static_pad("sink_0").unwrap().property::<WebRTCRTPTransceiver>("transceiver").set_property("do-nack", true);
-
-        //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, &audio_webrtc_queue, &webrtcbin])?;
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
