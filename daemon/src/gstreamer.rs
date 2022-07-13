@@ -330,6 +330,8 @@ impl GstHandle {
                 let video_payload_type = media_string[3].parse().unwrap();
                 let rtx_payload_type = media_string[4].parse().unwrap();
 
+                // TODO: Extract audio payload type
+
                 match task::block_on(to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
                         audio: audio_ssrc,
