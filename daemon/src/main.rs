@@ -4,8 +4,29 @@ use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
 
 fn main() {
+    // Figure out logging level
+    let mut log_level = Level::INFO;
+    let mut gst_level = 0;
+    if let Ok(level) = std::env::var("TUX_LOG") {
+        if let Ok(level) = level.parse::<u8>() {
+            log_level = match level {
+                1 => Level::WARN,
+                2 => Level::INFO,
+                3 => Level::DEBUG,
+                4 => Level::TRACE,
+                _ => Level::ERROR
+            };
+            gst_level = level.clamp(0, 4);
+        }
+    }
+
+    // Only set GST_DEBUG if not set already
+    if let Err(_) = std::env::var("GST_DEBUG") {
+        std::env::set_var("GST_DEBUG", gst_level.to_string());
+    }
+
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
+        .with_max_level(log_level)
         .finish();
 
     match tracing::subscriber::set_global_default(subscriber) {

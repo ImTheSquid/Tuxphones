@@ -257,9 +257,6 @@ impl GstHandle {
         //Setting do-nack on webrtcbin video webrtctransceiver to true for rtx
         let video_transceiver = webrtcbin.static_pad("sink_0").unwrap().property::<WebRTCRTPTransceiver>("transceiver");
         video_transceiver.set_property("do-nack", true);
-        println!("{:#?}", video_transceiver.list_properties().into_iter().map(|f| format!("{}, {}", f.name(), f.value_type())).collect::<Vec<_>>());
-        println!("{:#?}", video_transceiver.property_value("codec-preferences"));
-        println!("{:#?}", video_transceiver.property_value("do-nack"));
 
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, /*&audio_payload_caps,*/ &audio_webrtc_queue, &webrtcbin])?;
