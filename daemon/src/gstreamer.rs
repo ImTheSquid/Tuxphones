@@ -329,6 +329,7 @@ impl GstHandle {
                 let rtx_payload_type = media_string[4].parse().unwrap();
 
                 // TODO: Extract audio payload type
+                let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
 
                 match task::block_on(to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
@@ -349,6 +350,10 @@ impl GstHandle {
                     }
                 };
 
+                // Type conversion
+                let video_payload_type = video_payload_type.into();
+                let rtx_payload_type = rtx_payload_type.into();
+
                 let from_ws = task::block_on(from_ws_rx.recv()).unwrap();
                 debug!("[WebRTC] Received remote SDP from ws");
                 trace!("[WebRTC] Remote SDP: {:?}", from_ws.remote_sdp);
@@ -367,159 +372,174 @@ impl GstHandle {
                 edited_sdp_message.set_session_name("-");
                 edited_sdp_message.add_attribute("msid-semantic", Some(" WMS *"));
 
-                edited_sdp_message.add_attribute("group", Some("BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21"));
+                const MAX_MID: u8 = 21;
+                edited_sdp_message.add_attribute("group", Some(&format!("BUNDLE {}", (0..=MAX_MID).into_iter().map(|v| v.to_string()).collect::<Vec<String>>().join(" "))));
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 //FIXME: Are ttl and addr_number right? (Discord doesn't specift them but gst requires them maybe is possible in some way to use a manipulate the sdp string)
                 edited_sdp_message.set_connection("IN", "IP4", main_ip, 127, 0);
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("rtpmap", Some(format!("{} opus/48000/2", 111).as_str()));
+                edited_sdp_message.add_attribute("rtpmap", Some(format!("{} opus/48000/2", audio_payload_type).as_str()));
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("fmtp", Some(format!("{} minptime=10;useinbandfec=1;usedtx=1", 111).as_str()));
+                edited_sdp_message.add_attribute("fmtp", Some(format!("{} minptime=10;useinbandfec=1;usedtx=1", audio_payload_type).as_str()));
 
                 edited_sdp_message.add_attribute("rtcp", Some(main_port));
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("rtcp-fb", Some(format!("{} transport-cc", 111).as_str()));
+                edited_sdp_message.add_attribute("rtcp-fb", Some(format!("{} transport-cc", audio_payload_type).as_str()));
 
                 edited_sdp_message.add_attribute("extmap", Some("1 urn:ietf:params:rtp-hdrext:ssrc-audio-level"));
                 edited_sdp_message.add_attribute("extmap", Some("3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"));
 
                 edited_sdp_message.add_attribute("setup", Some("passive"));
 
+                for i in 0..=MAX_MID {
+                    edited_sdp_message.add_attribute("mid", Some(&i.to_string()));
 
-                edited_sdp_message.add_attribute("mid", Some("0"));
+                    //TODO: mid information
+
+                    if i == MAX_MID {
+                        continue;
+                    } else if i == 0 || i as f64 >= (MAX_MID as f64 / 2.0).ceil() {
+                        edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
+                    } else {
+                        edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
+                    }
+                }
+
+
+                /*edited_sdp_message.add_attribute("mid", Some("0"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("1"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("2"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("3"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("4"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("5"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("6"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("7"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("8"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("9"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("10"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("11"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("12"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("13"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("14"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("15"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("16"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("17"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("18"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("19"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("20"));
                 //TODO: mid information
 
                 //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
 
                 edited_sdp_message.add_attribute("mid", Some("21"));
-                //TODO: mid information
+                //TODO: mid information*/
 
 
                 trace!("[WebRTC] Edited SDP: {:?}", edited_sdp_message.as_text());
