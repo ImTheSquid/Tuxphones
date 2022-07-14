@@ -397,6 +397,74 @@ impl GstHandle {
 
                 edited_sdp_message.add_attribute("setup", Some("passive"));
 
+
+                edited_sdp_message.add_attribute("mid", Some("0"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("1"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("2"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("3"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("4"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("5"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("6"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("7"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("8"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("9"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("10"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("11"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("12"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("13"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("14"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("15"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("16"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("17"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("18"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("19"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("20"));
+                //TODO: mid information
+
+                edited_sdp_message.add_attribute("mid", Some("21"));
+                //TODO: mid information
+
+
                 trace!("[WebRTC] Edited SDP: {:?}", edited_sdp_message.as_text());
 
                 let webrtc_desc = WebRTCSessionDescription::new(
