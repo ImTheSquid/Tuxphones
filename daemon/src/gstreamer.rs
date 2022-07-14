@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
-use gst_sdp::SDPMessage;
+use gst_sdp::{SDPMedia, SDPMessage};
 use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
@@ -353,14 +353,55 @@ impl GstHandle {
                 debug!("[WebRTC] Received remote SDP from ws");
                 trace!("[WebRTC] Remote SDP: {:?}", from_ws.remote_sdp);
 
-                let mut sdp_message = SDPMessage::new();
-                sdp_message.set_uri(&from_ws.remote_sdp);
+                let original_sdp_entries = from_ws.remote_sdp.split('\n').collect::<Vec<&str>>();
 
-                trace!("[WebRTC] Parsed remote SDP: {:?}", sdp_message.as_text().unwrap());
+                let main_port = original_sdp_entries[0].split(' ').nth(1).unwrap();
+                let main_ip = from_ws.remote_sdp.split([' ', '\n']).find(|line| line.matches('.').count() == 3).unwrap();
+                debug!("[WebRTC] IP: {}:{}", main_ip, main_port);
+
+                let mut edited_sdp_message = SDPMessage::new();
+                //Hardcoded description values
+                edited_sdp_message.set_version("0");
+                edited_sdp_message.set_origin("-", "1420070400000", "0", "IN", "IP4", "127.0.0.1");
+                edited_sdp_message.set_session_name("-");
+                edited_sdp_message.add_attribute("msid-semantic", Some(" WMS *"));
+
+                edited_sdp_message.add_attribute("group", Some("BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21"));
+
+
+                let mut main_audio_media = SDPMedia::new();
+                main_audio_media.set_media("audio");
+                main_audio_media.set_port_info(main_port.parse::<u32>().unwrap(), 0);
+                //TODO: Handle payload type (111) in a better way
+                //FIXME: Probably not the right way to set the payload type since it should be in fmt and not in proto (probably working since at the end is only a string)
+                main_audio_media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", 111).as_str());
+
+                edited_sdp_message.add_media(main_audio_media);
+
+                //FIXME: Are ttl and addr_number right? (Discord doesn't specift them but gst requires them maybe is possible in some way to use a manipulate the sdp string)
+                edited_sdp_message.set_connection("IN", "IP4", main_ip, 127, 0);
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_attribute("rtpmap", Some(format!("{} opus/48000/2", 111).as_str()));
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_attribute("fmtp", Some(format!("{} minptime=10;useinbandfec=1;usedtx=1", 111).as_str()));
+
+                edited_sdp_message.add_attribute("rtcp", Some(main_port));
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_attribute("rtcp-fb", Some(format!("{} transport-cc", 111).as_str()));
+
+                edited_sdp_message.add_attribute("extmap", Some("1 urn:ietf:params:rtp-hdrext:ssrc-audio-level"));
+                edited_sdp_message.add_attribute("extmap", Some("3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"));
+
+                edited_sdp_message.add_attribute("setup", Some("passive"));
+
+                trace!("[WebRTC] Edited SDP: {:?}", edited_sdp_message.as_text());
 
                 let webrtc_desc = WebRTCSessionDescription::new(
                     WebRTCSDPType::Answer,
-                    sdp_message,
+                    edited_sdp_message,
                 );
                 webrtcbin.emit_by_name::<()>("set-remote-description", &[&webrtc_desc, &None::<gst::Promise>]);
                 debug!("[WebRTC] Remote description set");
