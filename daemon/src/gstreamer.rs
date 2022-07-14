@@ -356,6 +356,7 @@ impl GstHandle {
                 let original_sdp_entries = from_ws.remote_sdp.split('\n').collect::<Vec<&str>>();
 
                 let main_port = original_sdp_entries[0].split(' ').nth(1).unwrap();
+                let main_port_u32 = main_port.parse::<u32>().unwrap();
                 let main_ip = from_ws.remote_sdp.split([' ', '\n']).find(|line| line.matches('.').count() == 3).unwrap();
                 debug!("[WebRTC] IP: {}:{}", main_ip, main_port);
 
@@ -368,15 +369,8 @@ impl GstHandle {
 
                 edited_sdp_message.add_attribute("group", Some("BUNDLE 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21"));
 
-
-                let mut main_audio_media = SDPMedia::new();
-                main_audio_media.set_media("audio");
-                main_audio_media.set_port_info(main_port.parse::<u32>().unwrap(), 0);
                 //TODO: Handle payload type (111) in a better way
-                //FIXME: Probably not the right way to set the payload type since it should be in fmt and not in proto (probably working since at the end is only a string)
-                main_audio_media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", 111).as_str());
-
-                edited_sdp_message.add_media(main_audio_media);
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 //FIXME: Are ttl and addr_number right? (Discord doesn't specift them but gst requires them maybe is possible in some way to use a manipulate the sdp string)
                 edited_sdp_message.set_connection("IN", "IP4", main_ip, 127, 0);
@@ -401,65 +395,128 @@ impl GstHandle {
                 edited_sdp_message.add_attribute("mid", Some("0"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("1"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 edited_sdp_message.add_attribute("mid", Some("2"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+
                 edited_sdp_message.add_attribute("mid", Some("3"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 edited_sdp_message.add_attribute("mid", Some("4"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+
                 edited_sdp_message.add_attribute("mid", Some("5"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 edited_sdp_message.add_attribute("mid", Some("6"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+
                 edited_sdp_message.add_attribute("mid", Some("7"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 edited_sdp_message.add_attribute("mid", Some("8"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+
                 edited_sdp_message.add_attribute("mid", Some("9"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
 
                 edited_sdp_message.add_attribute("mid", Some("10"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (111) in a better way
+                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, 111));
+
                 edited_sdp_message.add_attribute("mid", Some("11"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
 
                 edited_sdp_message.add_attribute("mid", Some("12"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("13"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
 
                 edited_sdp_message.add_attribute("mid", Some("14"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("15"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
 
                 edited_sdp_message.add_attribute("mid", Some("16"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("17"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
 
                 edited_sdp_message.add_attribute("mid", Some("18"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("19"));
                 //TODO: mid information
 
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
+
                 edited_sdp_message.add_attribute("mid", Some("20"));
                 //TODO: mid information
+
+                //TODO: Handle payload type (127, 121) in a better way
+                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, 127, 121));
 
                 edited_sdp_message.add_attribute("mid", Some("21"));
                 //TODO: mid information
@@ -514,4 +571,20 @@ fn get_filtered_sdp(sdp: String) -> String {
 
             Some(tokens.join(" "))
         }).collect::<Vec<String>>().join("\n")
+}
+
+fn new_sdp_audio_media(port: u32, payload: u32) -> SDPMedia {
+    let mut media = SDPMedia::new();
+    media.set_media("audio");
+    media.set_port_info(port, 0);
+    media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", payload).as_str());
+    media
+}
+
+fn new_sdp_video_media(port: u32, payload: u32, rtx_payload: u32) -> SDPMedia {
+    let mut media = SDPMedia::new();
+    media.set_media("video");
+    media.set_port_info(port, 0);
+    media.set_proto(format!("UDP/TLS/RTP/SAVPF {} {}", payload, rtx_payload).as_str());
+    media
 }
