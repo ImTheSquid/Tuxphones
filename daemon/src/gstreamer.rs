@@ -340,7 +340,7 @@ impl GstHandle {
                 // let ufrag = video_media.attribute_val("ice-ufrag").unwrap();
                 // let pwd = video_media.attribute_val("ice-pwd").unwrap();
                 // let fingerprint = video_media.attribute_val("fingerprint").unwrap();
-                let rtx_ssrc: u32 = video_media.attribute_val("ssrc-group").unwrap().split(' ').collect::<Vec<&str>>()[1].parse().unwrap();
+                let rtx_ssrc: u32 = video_media.attribute_val("ssrc-group").unwrap().split(' ').collect::<Vec<&str>>()[2].parse().unwrap();
 
                 // TODO: Extract audio payload type
                 let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
