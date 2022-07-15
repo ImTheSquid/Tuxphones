@@ -214,7 +214,7 @@ impl GstHandle {
         let stun_server = ice.urls.iter().find(|url| url.starts_with("stun:")).unwrap().replace("stun:", "stun://");
 
         //TODO: Find a way to sanitize ice.username and ice.password
-        let turn_auth = format!("turn://{}:{}@", ice.username, ice.credential);
+        let turn_auth = format!("turn://{}:{}@", ice.username, ice.credential.replace('+', "-").replace('/', "_"));
         let turn_servers = ice.urls.iter().filter(|url| url.starts_with("turn:")).map(|url| url.replace("turn:", &turn_auth)).collect::<Vec<_>>();
         debug!("Using STUN server: {:?}", stun_server);
         debug!("Using TURN servers: {:?}", turn_servers);
