@@ -1,10 +1,11 @@
 use std::sync::{Arc, Mutex};
 
 use async_std::task;
-use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, StateChangeError, StateChangeSuccess};
+use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, SerializeFlags, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
+use gst::tags::Serial;
 use gst_sdp::{SDPMedia, SDPMessage};
-use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCICEConnectionState, WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
@@ -279,7 +280,14 @@ impl GstHandle {
 
             let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
 
-            let create_offer_options = gst::Structure::new_empty("create_offer_options");
+            let mut create_offer_options = gst::Structure::new_empty("options");
+
+            create_offer_options.set("offerToReceiveVideo", -1);
+            create_offer_options.set("offerToReceiveAudio", -1);
+            create_offer_options.set("voiceActivityDetection", true);
+            create_offer_options.set("iceRestart", false);
+
+            debug!("[WebRTC] Creating offer with options: {:?}", create_offer_options.serialize(SerializeFlags::all()));
 
             webrtcbin.lock().unwrap().emit_by_name::<()>("create-offer", &[&create_offer_options, &Promise::with_change_func({
                 let webrtcbin = webrtcbin.clone();
