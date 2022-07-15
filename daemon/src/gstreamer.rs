@@ -44,14 +44,26 @@ impl std::fmt::Display for GstInitializationError {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct H264Settings {
     pub nvidia_encoder: bool,
 }
 
+#[derive(Clone, Copy)]
 pub enum VideoEncoderType {
     H264(H264Settings),
     VP8,
     VP9,
+}
+
+impl VideoEncoderType {
+    fn type_string(self) -> &'static str {
+        match self {
+            VideoEncoderType::H264(_) => "H264",
+            VideoEncoderType::VP8 => "VP8",
+            VideoEncoderType::VP9 => "VP9",
+        }
+    }
 }
 
 impl From<glib::Error> for GstInitializationError {
@@ -308,14 +320,30 @@ impl GstHandle {
             debug!("[WebRTC] ICE gathering state changed: {:?}", state);
             if state == WebRTCICEGatheringState::Complete {
                 let local_description = webrtcbin.property::<WebRTCSessionDescription>("local-description");
-                let sdp_filtered = get_filtered_sdp(local_description.sdp().as_text().unwrap());
+                let local_sdp = local_description.sdp();
+                debug!("[WebRTC] Local media count: {}", local_sdp.medias_len());
+                let sdp_filtered = get_filtered_sdp(local_sdp.as_text().unwrap());
 
                 let video_pad = webrtcbin.static_pad("sink_0").unwrap();
                 let audio_pad = webrtcbin.static_pad("sink_1").unwrap();
 
                 let video_ssrc: u32 = get_cap_value_from_str::<u32>(&video_pad.caps().unwrap(), "ssrc").unwrap_or(0);
                 let audio_ssrc: u32 = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
-                let rtx_ssrc: u32 = sdp_filtered.split('\n').find(|line| line.starts_with("a=ssrc-group:FID")).unwrap().split(' ').collect::<Vec<&str>>()[2].parse().unwrap();
+                // let rtx_ssrc: u32 = sdp_filtered.split('\n').find(|line| line.starts_with("a=ssrc-group:FID")).unwrap().split(' ').collect::<Vec<&str>>()[2].parse().unwrap();
+
+                let media_string = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>();
+                let mut media_iter = local_sdp.medias();
+                let video_media = media_iter.next().unwrap();
+                let video_payload_type = media_string[3].parse().unwrap(); // [3]
+                let rtx_payload_type = media_string[4].parse().unwrap(); // [4]
+
+                // let ufrag = video_media.attribute_val("ice-ufrag").unwrap();
+                // let pwd = video_media.attribute_val("ice-pwd").unwrap();
+                // let fingerprint = video_media.attribute_val("fingerprint").unwrap();
+                let rtx_ssrc: u32 = video_media.attribute_val("ssrc-group").unwrap().split(' ').collect::<Vec<&str>>()[1].parse().unwrap();
+
+                // TODO: Extract audio payload type
+                let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
 
                 trace!("[WebRTC] Transcirver: {:?}", video_transceiver);
 
@@ -323,13 +351,6 @@ impl GstHandle {
                 trace!("[WebRTC] Video SSRC: {:?}", video_ssrc);
                 trace!("[WebRTC] Audio SSRC: {:?}", audio_ssrc);
                 trace!("[WebRTC] RTX SSRC: {:?}", rtx_ssrc);
-
-                let media_string = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>();
-                let video_payload_type = media_string[3].parse().unwrap();
-                let rtx_payload_type = media_string[4].parse().unwrap();
-
-                // TODO: Extract audio payload type
-                let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
 
                 match task::block_on(to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
@@ -360,8 +381,13 @@ impl GstHandle {
 
                 let original_sdp_entries = from_ws.remote_sdp.split('\n').collect::<Vec<&str>>();
 
+                let candidate = &original_sdp_entries.clone().into_iter().find(|line| line.starts_with("a=candidate")).unwrap()[12..];
+                let fingerprint = &original_sdp_entries.clone().into_iter().find(|line| line.starts_with("a=fingerprint")).unwrap()[14..];
+                let ufrag = &original_sdp_entries.clone().into_iter().find(|line| line.starts_with("a=ice-ufrag")).unwrap()[12..];
+                let pwd = &original_sdp_entries.clone().into_iter().find(|line| line.starts_with("a=ice-pwd")).unwrap()[10..];
+
                 let main_port = original_sdp_entries[0].split(' ').nth(1).unwrap();
-                let main_port_u32 = main_port.parse::<u32>().unwrap();
+                let main_port = main_port.parse::<u16>().unwrap();
                 let main_ip = from_ws.remote_sdp.split([' ', '\n']).find(|line| line.matches('.').count() == 3).unwrap();
                 debug!("[WebRTC] IP: {}:{}", main_ip, main_port);
 
@@ -372,174 +398,28 @@ impl GstHandle {
                 edited_sdp_message.set_session_name("-");
                 edited_sdp_message.add_attribute("msid-semantic", Some(" WMS *"));
 
-                const MAX_MID: u8 = 21;
+                const MAX_MID: u8 = 1; // used to be 21
                 edited_sdp_message.add_attribute("group", Some(&format!("BUNDLE {}", (0..=MAX_MID).into_iter().map(|v| v.to_string()).collect::<Vec<String>>().join(" "))));
 
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                //FIXME: Are ttl and addr_number right? (Discord doesn't specift them but gst requires them maybe is possible in some way to use a manipulate the sdp string)
-                edited_sdp_message.set_connection("IN", "IP4", main_ip, 127, 0);
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("rtpmap", Some(format!("{} opus/48000/2", audio_payload_type).as_str()));
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("fmtp", Some(format!("{} minptime=10;useinbandfec=1;usedtx=1", audio_payload_type).as_str()));
-
-                edited_sdp_message.add_attribute("rtcp", Some(main_port));
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_attribute("rtcp-fb", Some(format!("{} transport-cc", audio_payload_type).as_str()));
-
-                edited_sdp_message.add_attribute("extmap", Some("1 urn:ietf:params:rtp-hdrext:ssrc-audio-level"));
-                edited_sdp_message.add_attribute("extmap", Some("3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"));
-
-                edited_sdp_message.add_attribute("setup", Some("passive"));
-
                 for i in 0..=MAX_MID {
-                    edited_sdp_message.add_attribute("mid", Some(&i.to_string()));
+                    let attrs = MediaAttributes {
+                        main_ip,
+                        mid: i,
+                        port: main_port,
+                        ufrag,
+                        pwd,
+                        fingerprint,
+                        candidate
+                    };
 
-                    //TODO: mid information
-
-                    if i == MAX_MID {
-                        continue;
-                    } else if i == 0 || i as f64 >= (MAX_MID as f64 / 2.0).ceil() {
-                        edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
+                    if i == 0 {
+                        edited_sdp_message.add_media(new_sdp_video_media(video_payload_type, rtx_payload_type, &encoder_to_use,  &attrs));
                     } else {
-                        edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
+                        edited_sdp_message.add_media(new_sdp_audio_media(audio_payload_type, &attrs));
                     }
                 }
 
-
-                /*edited_sdp_message.add_attribute("mid", Some("0"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("1"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("2"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("3"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("4"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("5"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("6"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("7"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("8"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("9"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("10"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (111) in a better way
-                edited_sdp_message.add_media(new_sdp_audio_media(main_port_u32, audio_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("11"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("12"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("13"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("14"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("15"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("16"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("17"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("18"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("19"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("20"));
-                //TODO: mid information
-
-                //TODO: Handle payload type (127, 121) in a better way
-                edited_sdp_message.add_media(new_sdp_video_media(main_port_u32, video_payload_type, rtx_payload_type));
-
-                edited_sdp_message.add_attribute("mid", Some("21"));
-                //TODO: mid information*/
+                debug!("[WebRTC] Generated media count: {}", edited_sdp_message.medias_len());
 
 
                 trace!("[WebRTC] Edited SDP: {:?}", edited_sdp_message.as_text());
@@ -583,7 +463,7 @@ fn get_filtered_sdp(sdp: String) -> String {
                 return Some(line.to_string());
             }
 
-            let mut tokens = line.split(' ').collect::<Vec<&str>>();
+            let tokens = line.split(' ').collect::<Vec<&str>>();
 
             if tokens[2] == "TCP" {
                 return None;
@@ -593,18 +473,92 @@ fn get_filtered_sdp(sdp: String) -> String {
         }).collect::<Vec<String>>().join("\n")
 }
 
-fn new_sdp_audio_media(port: u32, payload: u32) -> SDPMedia {
+fn new_sdp_audio_media(payload: u32, attrs: &MediaAttributes) -> SDPMedia {
     let mut media = SDPMedia::new();
     media.set_media("audio");
-    media.set_port_info(port, 0);
     media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", payload).as_str());
+
+    media.add_attribute("fmtp", Some(&format!("{} minptime=10;useinbandfec=1;usedtx=1", payload)));
+
+    media.add_attribute("maxptime", Some("60"));
+
+    media.add_attribute("rtpmap", Some(&format!("{} opus/90000", payload)));
+
+    media.add_attribute("rtcp-fb", Some(&format!("{} transport-cc", payload)));
+
+    [
+        "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
+        "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
+    ].into_iter().for_each(|ext| {
+        media.add_attribute("extmap", Some(ext));
+    });
+
+    fill_media_minimal(&mut media, attrs);
+
     media
 }
 
-fn new_sdp_video_media(port: u32, payload: u32, rtx_payload: u32) -> SDPMedia {
+fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderType, attrs: &MediaAttributes) -> SDPMedia {
     let mut media = SDPMedia::new();
     media.set_media("video");
-    media.set_port_info(port, 0);
     media.set_proto(format!("UDP/TLS/RTP/SAVPF {} {}", payload, rtx_payload).as_str());
+
+    media.add_attribute("fmtp", Some(&format!("{} x-google-max-bitrate=2500;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", payload)));
+    media.add_attribute("fmtp", Some(&format!("{} apt={}", rtx_payload, payload)));
+
+    ["ccm fir", "nack", "nack pli", "goog-remb", "transport-cc"].into_iter().for_each(|val| {
+        media.add_attribute("rtcp-fb", Some(&format!("{} {}", payload, val)));
+    });
+
+    [
+        "2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time", 
+        "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+        "14 urn:ietf:params:rtp-hdrext:toffset",
+        "13 urn:3gpp:video-orientation",
+        "5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+    ].into_iter().for_each(|ext| {
+        media.add_attribute("extmap", Some(ext));
+    });
+
+    media.add_attribute("rtpmap", Some(&format!("{} {}/90000", payload, encoder.type_string())));
+    media.add_attribute("rtpmap", Some(&format!("{} rtx/90000", rtx_payload)));
+
+    fill_media_minimal(&mut media, attrs);
+
     media
+}
+
+struct MediaAttributes<'a> {
+    main_ip: &'a str,
+    port: u16,
+    mid: u8,
+    ufrag: &'a str,
+    pwd: &'a str,
+    fingerprint: &'a str,
+    candidate: &'a str
+}
+
+/// Fills the media with common attributes
+fn fill_media_minimal(media: &mut SDPMedia, attrs: &MediaAttributes) {
+    media.set_port_info(attrs.port.into(), 0);
+    media.add_connection("IN", "IP4", attrs.main_ip, 127, 0);
+
+    media.add_attribute("mid", Some(&attrs.mid.to_string()));
+
+    // Should probably be None, but doing so causes a segfault
+    media.add_attribute("rtcp-mux", Some(""));
+
+    media.add_attribute("rtcp", Some(&attrs.port.to_string()));
+
+    media.add_attribute("setup", Some("passive"));
+
+    // Should probably be None, but doing so causes a segfault
+    media.add_attribute("inactive", Some(""));
+
+    media.add_attribute("ice-ufrag", Some(attrs.ufrag));
+    media.add_attribute("ice-pwd", Some(attrs.pwd));
+
+    media.add_attribute("fingerprint", Some(attrs.fingerprint));
+
+    media.add_attribute("candidate", Some(attrs.candidate));
 }
