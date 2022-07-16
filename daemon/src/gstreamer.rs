@@ -235,7 +235,7 @@ impl GstHandle {
         let video_webrtc_queue = gst::ElementFactory::make("queue", None)?;
         let audio_webrtc_queue = gst::ElementFactory::make("queue", None)?;
 
-        /*let video_payload_caps = gst::ElementFactory::make("capsfilter", None)?;
+        let video_payload_caps = gst::ElementFactory::make("capsfilter", None)?;
         //Create a vector containing the option of the gst caps
         //TODO: Use a const for this since is the same that should be sent through the websocket with the opcode 1
         let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("payload", &127)];
@@ -253,19 +253,19 @@ impl GstHandle {
         audio_payload_caps.set_property("caps", &gst::Caps::new_simple(
             "application/x-rtp",
             caps_options.as_ref(),
-        ));*/
+        ));
 
 
         //Add elements to the pipeline
         pipeline.add_many(&[
-            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay, //&video_payload_caps,
+            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder, &encoder_pay, &video_payload_caps,
             &video_encoder_queue, &video_webrtc_queue,
-            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay, //&audio_payload_caps,
+            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc, &rtpopuspay, &audio_payload_caps,
             &audio_encoder_queue, &audio_webrtc_queue,
             &webrtcbin])?;
 
         //Link video elements
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, /*&video_payload_caps,*/ &video_webrtc_queue, &webrtcbin])?;
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_payload_caps, &video_webrtc_queue, &webrtcbin])?;
 
         //Setting do-nack on webrtcbin video webrtctransceiver to true for rtx
         let video_transceiver = webrtcbin.static_pad("sink_0").unwrap().property::<WebRTCRTPTransceiver>("transceiver");
@@ -273,7 +273,7 @@ impl GstHandle {
         video_transceiver.set_property("fec-type", gst_webrtc::WebRTCFECType::UlpRed);
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, /*&audio_payload_caps,*/ &audio_webrtc_queue, &webrtcbin])?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_capsfilter, &audio_encoder_queue, &opusenc, &rtpopuspay, &audio_payload_caps, &audio_webrtc_queue, &webrtcbin])?;
 
         webrtcbin.connect("on-negotiation-needed", false, move |value| {
             info!("[WebRTC] Negotiation needed");
@@ -339,11 +339,31 @@ impl GstHandle {
                 let audio_ssrc: u32 = get_cap_value_from_str::<u32>(&audio_pad.caps().unwrap(), "ssrc").unwrap_or(0);
                 // let rtx_ssrc: u32 = sdp_filtered.split('\n').find(|line| line.starts_with("a=ssrc-group:FID")).unwrap().split(' ').collect::<Vec<&str>>()[2].parse().unwrap();
 
-                let media_string = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>();
-                let mut media_iter = local_sdp.medias();
-                let video_media = media_iter.next().unwrap();
-                let video_payload_type = media_string[media_string.len() - 2].parse().unwrap(); // [3]
-                let rtx_payload_type = media_string[media_string.len() - 1].parse().unwrap(); // [4]
+                // let media_string = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>();
+                let video_media = local_sdp.medias().find(|media| media.media().unwrap() == "video").unwrap();
+
+                let video_payload_type = video_media.attributes().find_map(|attr| {
+                    if attr.key() == "rtpmap" {
+                        let val = attr.value().unwrap().split(' ').collect::<Vec<&str>>();
+                        if val[1].contains(encoder_to_use.type_string()) {
+                            return Some(val[0].parse().unwrap())
+                        }
+                    }
+                    None
+                }).unwrap();
+
+                let rtx_payload_type = video_media.attributes().find_map(|attr| {
+                    if attr.key() == "fmtp" {
+                        let val = attr.value().unwrap().split(' ').collect::<Vec<&str>>();
+                        if val[1].contains(&format!("apt={}", video_payload_type)) {
+                            return Some(val[0].parse().unwrap())
+                        }
+                    }
+                    None
+                }).unwrap();
+
+                // let video_payload_type = media_string[3].parse().unwrap(); // [media_string.len() - 2]
+                // let rtx_payload_type = media_string[4].parse().unwrap(); // [media_string.len() - 1]
 
                 // let ufrag = video_media.attribute_val("ice-ufrag").unwrap();
                 // let pwd = video_media.attribute_val("ice-pwd").unwrap();
@@ -351,7 +371,7 @@ impl GstHandle {
                 let rtx_ssrc: u32 = video_media.attribute_val("ssrc-group").unwrap().split(' ').collect::<Vec<&str>>()[2].parse().unwrap();
 
                 // TODO: Extract audio payload type
-                let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
+                let audio_payload_type = sdp_filtered.split('\n').find(|line| line.starts_with("m=audio")).unwrap().split(' ').collect::<Vec<&str>>()[3].parse().unwrap();
 
                 trace!("[WebRTC] Transcirver: {:?}", video_transceiver);
 

@@ -1,4 +1,4 @@
-use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process, panic};
+use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, process, panic, env, path::Path, fs};
 use tracing::{error, info, Level};
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
@@ -56,6 +56,18 @@ fn main() {
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
         orig_hook(panic_info);
+
+        // Try to remove socket file
+        match env::var("HOME") {
+            Ok(val) => {
+                let path = Path::new(&val).join(".config").join("tuxphones.sock");
+                if let Err(e) = fs::remove_file(&path) {
+                    error!("Error removing socket file: {e}");
+                }
+            },
+            Err(e) => error!("Error removing socket file: {e}")
+        }
+
         process::exit(1);
     }));
 
