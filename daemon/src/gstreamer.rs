@@ -342,8 +342,8 @@ impl GstHandle {
                 let media_string = sdp_filtered.split('\n').find(|line| line.starts_with("m=video")).unwrap().split(' ').collect::<Vec<&str>>();
                 let mut media_iter = local_sdp.medias();
                 let video_media = media_iter.next().unwrap();
-                let video_payload_type = media_string[3].parse().unwrap(); // [3]
-                let rtx_payload_type = media_string[4].parse().unwrap(); // [4]
+                let video_payload_type = media_string[media_string.len() - 2].parse().unwrap(); // [3]
+                let rtx_payload_type = media_string[media_string.len() - 1].parse().unwrap(); // [4]
 
                 // let ufrag = video_media.attribute_val("ice-ufrag").unwrap();
                 // let pwd = video_media.attribute_val("ice-pwd").unwrap();
