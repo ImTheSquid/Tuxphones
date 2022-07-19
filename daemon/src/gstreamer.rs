@@ -5,7 +5,7 @@ use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError,
 use gst::prelude::*;
 use gst::tags::Serial;
 use gst_sdp::{SDPMedia, SDPMessage};
-use gst_webrtc::{WebRTCICEConnectionState, WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
+use gst_webrtc::{WebRTCICEConnectionState, WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription, WebRTCPeerConnectionState, WebRTCSCTPTransport};
 use once_cell::sync::Lazy;
 use tracing::{debug, error, info, trace};
 
@@ -222,12 +222,11 @@ impl GstHandle {
         webrtcbin.set_property_from_str("stun-server", &stun_server);
 
         //TODO: Use the for after instead of this before release
-        webrtcbin.set_property_from_str("turn-server", &turn_servers[0]);
-        /*
+        // webrtcbin.set_property_from_str("turn-server", &turn_servers[0]);
+        
         for turn_server in turn_servers {
             webrtcbin.emit_by_name::<bool>("add-turn-server", &[&turn_server]);
         }
-         */
 
         //queues
         let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
@@ -297,10 +296,17 @@ impl GstHandle {
                             info!("[WebRTC] Offer created");
 
                             let session_description = offer.unwrap().get::<WebRTCSessionDescription>("offer").unwrap();
+                            let mut sdp_msg = session_description.sdp();
+                            sdp_msg.add_attribute("extmap-allow-mixed", None);
+                            sdp_msg.add_attribute("msid-semantic", Some(" WMS"));
 
-                            let sdp: String = session_description.sdp().as_text().unwrap().replace("\r\n", "\n");
+                            let sdp: String = sdp_msg.as_text().unwrap().replace("\r\n", "\n");
                             trace!("[WebRTC] Offer: {:?}", sdp);
-                            webrtcbin.lock().unwrap().emit_by_name::<()>("set-local-description", &[&session_description, &None::<Promise>]);
+                            let webrtc_desc = WebRTCSessionDescription::new(
+                                WebRTCSDPType::Offer,
+                                sdp_msg,
+                            );
+                            webrtcbin.lock().unwrap().emit_by_name::<()>("set-local-description", &[&webrtc_desc, &None::<Promise>]);
                         }
                         Err(error) => {
                             error!("[WebRTC] Failed to create offer: {:?}", error);
@@ -314,9 +320,13 @@ impl GstHandle {
 
         #[cfg(debug_assertions)]
         webrtcbin.connect("on-ice-candidate", true, move |value| {
-            //let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
+            let webrtcbin = Arc::new(Mutex::new(value[0].get::<Element>().unwrap()));
             let candidate = value[2].get::<String>();
-            debug!("[WebRTC] ICE candidate received: {:?}", candidate);
+            if let Ok(candidate) = candidate {
+                debug!("[WebRTC] ICE candidate received: {:?}", candidate);
+                webrtcbin.lock().unwrap().emit_by_name::<()>("add-ice-candidate", &[&(0 as u32), &candidate]);
+                // webrtcbin.lock().unwrap().emit_by_name::<()>("add-ice-candidate", &[&(1 as u32), &candidate]);
+            }
             None
         });
 
@@ -426,7 +436,7 @@ impl GstHandle {
                 edited_sdp_message.set_session_name("-");
                 edited_sdp_message.add_attribute("msid-semantic", Some(" WMS *"));
 
-                const MAX_MID: u8 = 1; // used to be 21
+                /*const MAX_MID: u8 = 1; // used to be 21
                 edited_sdp_message.add_attribute("group", Some(&format!("BUNDLE {}", (0..=MAX_MID).into_iter().map(|v| v.to_string()).collect::<Vec<String>>().join(" "))));
 
                 for i in 0..=MAX_MID {
@@ -445,7 +455,21 @@ impl GstHandle {
                     } else {
                         edited_sdp_message.add_media(new_sdp_audio_media(audio_payload_type, &attrs));
                     }
-                }
+                }*/
+
+                edited_sdp_message.add_attribute("group", Some("BUNDLE video0 audio1"));
+
+                let attrs = MediaAttributes {
+                    main_ip,
+                    port: main_port,
+                    ufrag,
+                    pwd,
+                    fingerprint,
+                    candidate
+                };
+
+                edited_sdp_message.add_media(new_sdp_video_media(video_payload_type, rtx_payload_type, &encoder_to_use,  0, &attrs));
+                edited_sdp_message.add_media(new_sdp_audio_media(audio_payload_type, 1, &attrs));
 
                 debug!("[WebRTC] Generated media count: {}", edited_sdp_message.medias_len());
 
@@ -501,7 +525,7 @@ fn get_filtered_sdp(sdp: String) -> String {
         }).collect::<Vec<String>>().join("\n")
 }
 
-fn new_sdp_audio_media(payload: u32, attrs: &MediaAttributes) -> SDPMedia {
+fn new_sdp_audio_media(payload: u32, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
     let mut media = SDPMedia::new();
     media.set_media("audio");
     media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", payload).as_str());
@@ -513,6 +537,8 @@ fn new_sdp_audio_media(payload: u32, attrs: &MediaAttributes) -> SDPMedia {
     media.add_attribute("rtpmap", Some(&format!("{} opus/90000", payload)));
 
     media.add_attribute("rtcp-fb", Some(&format!("{} transport-cc", payload)));
+
+    media.add_attribute("mid", Some(&format!("audio{}", mid)));
 
     [
         "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
@@ -526,7 +552,7 @@ fn new_sdp_audio_media(payload: u32, attrs: &MediaAttributes) -> SDPMedia {
     media
 }
 
-fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderType, attrs: &MediaAttributes) -> SDPMedia {
+fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderType, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
     let mut media = SDPMedia::new();
     media.set_media("video");
     media.set_proto(format!("UDP/TLS/RTP/SAVPF {} {}", payload, rtx_payload).as_str());
@@ -551,6 +577,8 @@ fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderTyp
     media.add_attribute("rtpmap", Some(&format!("{} {}/90000", payload, encoder.type_string())));
     media.add_attribute("rtpmap", Some(&format!("{} rtx/90000", rtx_payload)));
 
+    media.add_attribute("mid", Some(&format!("video{}", mid)));
+
     fill_media_minimal(&mut media, attrs);
 
     media
@@ -559,7 +587,7 @@ fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderTyp
 struct MediaAttributes<'a> {
     main_ip: &'a str,
     port: u16,
-    mid: u8,
+    // mid: u8,
     ufrag: &'a str,
     pwd: &'a str,
     fingerprint: &'a str,
@@ -571,7 +599,7 @@ fn fill_media_minimal(media: &mut SDPMedia, attrs: &MediaAttributes) {
     media.set_port_info(attrs.port.into(), 0);
     media.add_connection("IN", "IP4", attrs.main_ip, 127, 0);
 
-    media.add_attribute("mid", Some(&attrs.mid.to_string()));
+    // media.add_attribute("mid", Some(&attrs.mid.to_string()));
 
     // Should probably be None, but doing so causes a segfault
     media.add_attribute("rtcp-mux", Some(""));
