@@ -52,7 +52,7 @@ impl XServerHandle {
         Ok(None)
     }
 
-    pub fn take_screnshot(&self, xid: xid) -> Result<Vec<u8>, xcb::Error> {
+    pub fn take_screenshot(&self, xid: xid) -> Result<Vec<u8>, xcb::Error> {
         let size = window_size(&self.connection, xid)?;
 
         let cookie = self.connection.send_request(&GetImage {

@@ -271,7 +271,7 @@ impl CommandProcessor {
                             if send_preview {
                                 let _ = last_stream_preview.insert(time::Instant::now());
                                 info!("Sending stream preview");
-                                if let Err(e) = socket::send::stream_preview(&x.take_screnshot(current_xid.unwrap()).unwrap()) {
+                                if let Err(e) = socket::send::stream_preview(&x.take_screenshot(current_xid.unwrap()).unwrap()) {
                                     error!("Failed to send stream preview: {}", e);
                                 }
                             }
