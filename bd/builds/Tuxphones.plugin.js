@@ -301,6 +301,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId && m.default._changeCallbacks.size)).default;
 		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
 		const WebRequests = BdApi.findModule((m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete)).default;
+		const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
 		const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 		const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 		const Button = BdApi.findModuleByProps("BorderColors");
@@ -467,12 +468,19 @@ function buildPlugin([BasePlugin, PluginApi]) {
 							apps: obj.apps
 						});
 						break;
+					case "StreamPreview":
+						ChunkedRequests.makeChunkedRequest(`/streams/${this.streamKey}/preview`, {
+							thumbnail: `data:image/jpeg;base64,${obj.jpg}`
+						}, {
+							method: "POST",
+							token: AuthenticationStore.getToken()
+						});
+						break;
 					default:
 						Logger.err(`Received unknown command type: ${obj.type}`);
 				}
 			}
 			startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-				Logger.log("TEST");
 				this.unixClient = (0, external_net_namespaceObject.createConnection)(this.sockPath, (async () => {
 					const {
 						servers,

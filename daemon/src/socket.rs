@@ -182,6 +182,12 @@ pub mod send {
     #[serde(tag = "type")]
     pub struct StreamStop {}
 
+    #[derive(Serialize, Debug)]
+    #[serde(tag = "type")]
+    pub struct StreamPreview {
+        jpg: String
+    }
+
     #[derive(Debug)]
     pub enum SocketError {
         ConnectionFailed,
@@ -250,5 +256,9 @@ pub mod send {
 
     pub fn stream_stop_internal() -> Result<(), SocketError> {
         write_socket(&StreamStop {})
+    }
+
+    pub fn stream_preview(data: &Vec<u8>) -> Result<(), SocketError> {
+        write_socket(&StreamPreview { jpg: base64::encode(data) })
     }
 }

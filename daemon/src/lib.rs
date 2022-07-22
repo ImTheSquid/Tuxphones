@@ -1,4 +1,4 @@
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc, Mutex}, thread, time::Duration};
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread, time::{Duration, self}};
 use std::process::Command;
 
 use async_std::{channel, task};
@@ -48,17 +48,21 @@ impl CommandProcessor {
                 }
             };
 
+            let mut last_stream_preview: Option<time::Instant> = None;
+            let mut current_xid = None;
+
             let mut gst_is_loaded = false;
 
             let mut resize_watcher = None;
             let mut ws: Option<WebsocketConnection> = None;
-            let stream: Arc<Mutex<Option<GstHandle>>> = Arc::new(Mutex::new(None));
+            let mut stream = None;
 
             loop {
                 if !run.load(Ordering::SeqCst) {
                     // Kill websocket if still running
                     ws.take();
-                    stream.lock().unwrap().take();
+                    stream.take();
+                    current_xid.take();
                     if gst_is_loaded {
                         unsafe {gst::deinit();}
                     }
@@ -100,6 +104,7 @@ impl CommandProcessor {
                                     }
                                 }
 
+                                let _ = current_xid.insert(xid);
 
                                 let (to_ws_tx, from_gst_rx): (channel::Sender<ToWs>, channel::Receiver<ToWs>) = channel::unbounded();
                                 let (to_gst_tx, from_ws_rx): (channel::Sender<ToGst>, channel::Receiver<ToGst>) = channel::unbounded();
@@ -135,7 +140,7 @@ impl CommandProcessor {
                                 ).expect("Failed to initialize gstreamer pipeline");
                                 gst.start().expect("Failed to start stream");
 
-                                let _ = stream.lock().unwrap().insert(gst);
+                                let _ = stream.insert(gst);
 
                                 ws = match task::block_on(WebsocketConnection::new(
                                     endpoint,
@@ -165,7 +170,7 @@ impl CommandProcessor {
 
                                 // Kill gstreamer and ws
                                 ws.take();
-                                stream.lock().unwrap().take();
+                                stream.take();
 
                                 resize_watcher.take();
 
@@ -252,6 +257,25 @@ impl CommandProcessor {
                             break;
                         }
                         mpsc::TryRecvError::Empty => {
+                            // Check if time to send a stream preview
+                            let send_preview = if stream.is_some() {
+                                if let Some(last) = last_stream_preview {
+                                    if time::Instant::now().duration_since(last) > Duration::from_secs(10 * 60) {
+                                        true
+                                    } else { false }
+                                } else {
+                                    true
+                                }
+                            } else { false };
+
+                            if send_preview {
+                                let _ = last_stream_preview.insert(time::Instant::now());
+                                info!("Sending stream preview");
+                                if let Err(e) = socket::send::stream_preview(&x.take_screnshot(current_xid.unwrap()).unwrap()) {
+                                    error!("Failed to send stream preview: {}", e);
+                                }
+                            }
+
                             thread::sleep(sleep_time);
                         }
                     }

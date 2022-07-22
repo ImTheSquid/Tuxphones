@@ -1,9 +1,10 @@
-use std::{thread::{self, JoinHandle}, time::Duration, sync::{atomic::{AtomicBool, Ordering}, Arc}};
+use std::{thread::{self, JoinHandle}, time::Duration, sync::{atomic::{AtomicBool, Ordering}, Arc}, io::Cursor};
 
 use async_std::{channel::Sender, task};
+use image::{ImageBuffer, Rgb};
 use sysinfo::{SystemExt, ProcessExt, PidExt};
 use tracing::error;
-use xcb::{res::{QueryClientIds, ClientIdSpec, ClientIdMask}, x::{Event::{ConfigureNotify, PropertyNotify}, ChangeProperty, self, ChangeWindowAttributes, GetWindowAttributes, Cw, EventMask, GetProperty}, Xid};
+use xcb::{res::{QueryClientIds, ClientIdSpec, ClientIdMask}, x::{Event::{ConfigureNotify, PropertyNotify}, self, ChangeWindowAttributes, Cw, EventMask, GetProperty, GetImage, GetGeometry, CreatePixmap}, Xid};
 use crate::{pid, xid};
 
 pub struct XServerHandle {
@@ -50,11 +51,41 @@ impl XServerHandle {
 
         Ok(None)
     }
+
+    pub fn take_screnshot(&self, xid: xid) -> Result<Vec<u8>, xcb::Error> {
+        let size = window_size(&self.connection, xid)?;
+
+        let cookie = self.connection.send_request(&GetImage {
+            format: x::ImageFormat::ZPixmap, // jpg
+            drawable: xcb::x::Drawable::Window(unsafe { xcb::XidNew::new(xid) }),
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+            plane_mask: u32::MAX,
+        });
+
+        let reply = self.connection.wait_for_reply(cookie)?;
+
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+        println!("XID: {}", xid);
+
+        let mut image: ImageBuffer<image::Rgba<u8>, _> = image::ImageBuffer::from_raw(size.width.into(), size.height.into(), reply.data().to_owned()).unwrap();
+        // Convert BGRA to RGBA
+        for pixel in image.pixels_mut() {
+            pixel.0 = [pixel.0[2], pixel.0[1], pixel.0[0], pixel.0[3]];
+        }
+        image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+        
+        Ok(buf.into_inner())
+    }
 }
 
 pub struct XResizeWatcher {
     run: Arc<AtomicBool>,
-    thread: Option<JoinHandle<()>>
+    thread: Option<JoinHandle<()>>,
+    pub initial_size: Size
 }
 
 pub enum XResizeEvent {
@@ -65,8 +96,8 @@ pub enum XResizeEvent {
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct Size {
-    pub width: u32,
-    pub height: u32
+    pub width: u16,
+    pub height: u16
 }
 
 impl Drop for XResizeWatcher {
@@ -88,6 +119,8 @@ impl XResizeWatcher {
             window,
             value_list: &[Cw::EventMask(EventMask::STRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE)]
         });
+
+        let initial_size = window_size(&connection, xid)?;
 
         let run = Arc::new(AtomicBool::new(true));
         let r = run.clone();
@@ -154,6 +187,16 @@ impl XResizeWatcher {
             }
         });
 
-        Ok(XResizeWatcher { thread: Some(thread), run })
+        Ok(XResizeWatcher { thread: Some(thread), run, initial_size })
     }
+}
+
+fn window_size(conn: &xcb::Connection, xid: xid) -> Result<Size, xcb::Error> {
+    let cookie = conn.send_request(&GetGeometry {
+        drawable: x::Drawable::Window(unsafe { xcb::XidNew::new(xid) }),
+    });
+
+    let reply = conn.wait_for_reply(cookie)?;
+
+    Ok(Size { width: reply.width(), height: reply.height() })
 }

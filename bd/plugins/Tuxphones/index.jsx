@@ -11,6 +11,7 @@ const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
 const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId && m.default._changeCallbacks.size).default;
 const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
 const WebRequests = BdApi.findModule(m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete).default;
+const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
 const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
@@ -220,6 +221,15 @@ export default class extends BasePlugin {
                     apps: obj.apps
                 });
                 break;
+            case 'StreamPreview':
+                // Alternatively, DiscordNative.http.makeChunkedRequest
+                ChunkedRequests.makeChunkedRequest(`/streams/${this.streamKey}/preview`, {
+                    thumbnail: `data:image/jpeg;base64,${obj.jpg}` // May have to include charset?
+                }, {
+                    method: 'POST',
+                    token: AuthenticationStore.getToken()
+                });
+                break;
             default:
                 Logger.err(`Received unknown command type: ${obj.type}`);
         }
@@ -228,7 +238,6 @@ export default class extends BasePlugin {
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
     startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-        Logger.log("TEST")
         this.unixClient = createConnection(this.sockPath, async () => {
             const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
             const authData = servers.find(server => server.credential);
