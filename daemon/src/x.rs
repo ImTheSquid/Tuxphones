@@ -69,13 +69,14 @@ impl XServerHandle {
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
 
-        println!("XID: {}", xid);
-
         let mut image: ImageBuffer<image::Rgba<u8>, _> = image::ImageBuffer::from_raw(size.width.into(), size.height.into(), reply.data().to_owned()).unwrap();
         // Convert BGRA to RGBA
         for pixel in image.pixels_mut() {
             pixel.0 = [pixel.0[2], pixel.0[1], pixel.0[0], pixel.0[3]];
         }
+
+        // Resize image to reasonable thumbnail size
+        let image = image::imageops::resize(&image, 512, 512, image::imageops::FilterType::Triangle);
         image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
         
         Ok(buf.into_inner())
