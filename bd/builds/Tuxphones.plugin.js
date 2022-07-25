@@ -298,7 +298,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 		} = DiscordModules;
 		const React = BdApi.React;
 		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
-		const RTCConnectionStore = BdApi.findModule((m => m.default.getRTCConnectionId && m.default._changeCallbacks.size)).default;
+		const RTCConnectionStore = BdApi.findAllModules((m => m.default.getRTCConnectionId))[1].default;
 		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
 		const WebRequests = BdApi.findModule((m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete)).default;
 		const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
