@@ -6,7 +6,6 @@ pub mod websocket {
     use std::time::Duration;
 
     use async_std::{channel, task};
-    use async_std::channel::SendError;
     use async_std::sync::Mutex;
     use async_std::task::JoinHandle;
     use async_tungstenite::async_std::{connect_async, ConnectStream};
@@ -112,7 +111,7 @@ pub mod websocket {
                     let to_gst_tx = to_gst_tx.clone();
 
                     // Clone Strings to move across threads
-                    let ip = ip.clone();
+                    // let ip = ip.clone();
 
                     async move {
                         let mut msg = match msg {

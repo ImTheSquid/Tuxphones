@@ -3,10 +3,8 @@ use std::sync::{Arc, Mutex};
 use async_std::task;
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, SerializeFlags, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
-use gst::tags::Serial;
 use gst_sdp::{SDPMedia, SDPMessage};
-use gst_webrtc::{WebRTCICEConnectionState, WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription, WebRTCPeerConnectionState, WebRTCSCTPTransport};
-use once_cell::sync::Lazy;
+use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
 use tracing::{debug, error, info, trace};
 
 use crate::{receive::StreamResolutionInformation, ToGst, xid};

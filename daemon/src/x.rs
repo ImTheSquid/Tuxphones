@@ -1,10 +1,10 @@
 use std::{thread::{self, JoinHandle}, time::Duration, sync::{atomic::{AtomicBool, Ordering}, Arc}, io::Cursor};
 
 use async_std::{channel::Sender, task};
-use image::{ImageBuffer, Rgb};
+use image::ImageBuffer;
 use sysinfo::{SystemExt, ProcessExt, PidExt};
 use tracing::error;
-use xcb::{res::{QueryClientIds, ClientIdSpec, ClientIdMask}, x::{Event::{ConfigureNotify, PropertyNotify}, self, ChangeWindowAttributes, Cw, EventMask, GetProperty, GetImage, GetGeometry, CreatePixmap}, Xid};
+use xcb::{res::{QueryClientIds, ClientIdSpec, ClientIdMask}, x::{Event::{ConfigureNotify, PropertyNotify}, self, ChangeWindowAttributes, Cw, EventMask, GetProperty, GetImage, GetGeometry}, Xid};
 use crate::{pid, xid};
 
 pub struct XServerHandle {
