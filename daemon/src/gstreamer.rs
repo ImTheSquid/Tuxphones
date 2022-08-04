@@ -97,7 +97,8 @@ pub struct GstHandle {
     pipeline: gst::Pipeline,
     // webrtcbin: Element,
     webrtcredux: Arc<AsyncMutex<WebRtcRedux>>,
-    encoder: Element
+    encoder: Element,
+    encoder_type: VideoEncoderType
 }
 
 //Custom drop logic to deinit gstreamer when all handles are dropped
@@ -508,12 +509,14 @@ impl GstHandle {
         Ok(GstHandle {
             pipeline,
             webrtcredux,
-            encoder
+            encoder,
+            encoder_type: encoder_to_use
         })
     }
 
     pub async fn start(&self, to_ws_tx: mpsc::Sender<ToWs>, from_ws_rx: mpsc::Receiver<ToGst>) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)?;
+        let encoder = self.encoder_type;
 
         let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
 
@@ -552,7 +555,7 @@ impl GstHandle {
                                         match value {
                                             Some(val) => {
                                                 let num = val.clone().split(' ').collect::<Vec<_>>()[0].parse::<u8>().unwrap();
-                                                if val.ends_with("VP9/90000") && video_payload == 0 {
+                                                if val.ends_with(&format!("{}/90000", encoder.type_string())) && video_payload == 0 {
                                                     video_payload = num;
                                                 } else if val.ends_with("rtx/90000") && rtx_payload == 0 {
                                                     rtx_payload = num;
