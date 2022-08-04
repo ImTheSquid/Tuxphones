@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, SerializeFlags, StateChangeError, StateChangeSuccess};
@@ -6,6 +7,7 @@ use gst_sdp::{SDPMedia, SDPMessage};
 use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
 use tokio::runtime::Handle;
 use tracing::{debug, error, info, trace};
+use webrtcredux::sdp::{SdpProp, MediaType, MediaProp};
 use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceCandidateInit, RTCIceGathererState};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
@@ -513,11 +515,14 @@ impl GstHandle {
     pub async fn start(&self, to_ws_tx: mpsc::Sender<ToWs>, from_ws_rx: mpsc::Receiver<ToGst>) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)?;
 
+        let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
+
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_ice_gathering_state_change(Box::new(move |state| {
             debug!("ICE gathering state changed to: {}", state);
             let redux_arc = redux_arc.clone();
             let to_ws_tx = to_ws_tx.clone();
+            let from_ws_rx = arc_from_ws.clone();
 
             if state != RTCIceGathererState::Complete {
                 return Box::pin(async move {});
@@ -527,16 +532,88 @@ impl GstHandle {
                 let local = redux_arc.lock().await.local_description().await.unwrap().unwrap();
                 println!("Local SDP: {:#?}", local);
 
+                let video_media: &SdpProp = local.props.iter().find(|v| match *v {
+                    SdpProp::Media { r#type, .. } => {
+                        *r#type == MediaType::Video
+                    },
+                    _ => false
+                }).unwrap();
+
+                let (video_ssrc, video_payload_type, rtx_payload_type) = if let SdpProp::Media { props, .. } = video_media {
+                    let mut ssrc = 0u32;
+                    let mut video_payload = 0u8;
+                    let mut rtx_payload = 0u8;
+
+                    for prop in props {
+                        match prop {
+                            MediaProp::Attribute { key, value } => {
+                                match key {
+                                    v if *v == "rtpmap".to_string() => {
+                                        match value {
+                                            Some(val) => {
+                                                let num = val.clone().split(' ').collect::<Vec<_>>()[0].parse::<u8>().unwrap();
+                                                if val.ends_with("VP9/90000") && video_payload == 0 {
+                                                    video_payload = num;
+                                                } else if val.ends_with("rtx/90000") && rtx_payload == 0 {
+                                                    rtx_payload = num;
+                                                }
+                                            },
+                                            None => unreachable!()
+                                        }
+                                    },
+                                    v if *v == "ssrc".to_string() => {
+                                        ssrc = match value {
+                                            Some(val) => val.clone().split(' ').collect::<Vec<_>>()[0].parse::<u32>().unwrap(),
+                                            None => unreachable!(),
+                                        };
+                                    },
+                                    _ => continue
+                                }
+                            },
+                            _ => continue
+                        }
+                    }
+
+                    (ssrc, video_payload, rtx_payload)
+                } else { unreachable!() };
+
+                let audio_media: &SdpProp = local.props.iter().find(|v| match *v {
+                    SdpProp::Media { r#type, .. } => {
+                        *r#type == MediaType::Audio
+                    },
+                    _ => false
+                }).unwrap();
+
+                let audio_ssrc = if let SdpProp::Media { props, .. } = audio_media {
+                    props.into_iter().find_map(|p| match p {
+                        MediaProp::Attribute {key, value} => {
+                            if key != "ssrc" {
+                                return None;
+                            }
+                            let val = match value {
+                                Some(val) => val.clone(),
+                                None => unreachable!(),
+                            };
+                            Some(val.split(' ').collect::<Vec<_>>()[0].parse::<u32>().unwrap())
+                        },
+                        _ => None
+                    }).unwrap()
+                } else { unreachable!() };
+
                 to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
-                        audio: 0,
-                        video: 0,
+                        audio: audio_ssrc,
+                        video: video_ssrc,
                         rtx: 0
                     },
                     local_sdp: local.to_string(),
-                    video_payload_type: 127,
-                    rtx_payload_type: 121,
+                    video_payload_type,
+                    rtx_payload_type,
                 }).await.unwrap();
+
+                let from_ws = from_ws_rx.lock().await.recv().await.unwrap();
+
+                println!("Received remote SDP: {:#?}", SDP::from_str(&from_ws.remote_sdp).unwrap());
             })
         })).await.expect("Failed to set on ice gathering change");
 
@@ -546,7 +623,6 @@ impl GstHandle {
         debug!("All tracks added");
 
         let offer = self.webrtcredux.lock().await.create_offer(None).await.expect("Failed to create offer");
-        println!("SDP: {:#?}", offer);
         self.webrtcredux.lock().await.set_local_description(&offer, RTCSdpType::Offer).await.expect("Failed to set local description");
         info!("Local description set");
 
