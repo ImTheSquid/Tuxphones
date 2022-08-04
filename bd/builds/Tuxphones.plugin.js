@@ -463,7 +463,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				Logger.log(obj);
 				switch (obj.type) {
 					case "ApplicationList":
-						Dispatcher.dirtyDispatch({
+						Dispatcher.dispatch({
 							type: "TUX_APPS",
 							apps: obj.apps
 						});
@@ -531,7 +531,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 				}));
 				this.unixClient.on("error", (e => {
 					Logger.err(`[GetInfo] Socket client error: ${e}`);
-					Dispatcher.dirtyDispatch({
+					Dispatcher.dispatch({
 						type: "TUX_APPS",
 						apps: []
 					});

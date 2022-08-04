@@ -2,13 +2,16 @@ pub mod websocket {
     use std::borrow::BorrowMut;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc::Sender;
     use std::time::Duration;
 
-    use async_std::{channel, task};
-    use async_std::sync::Mutex;
-    use async_std::task::JoinHandle;
-    use async_tungstenite::async_std::{connect_async, ConnectStream};
+    use tokio::sync::Mutex;
+    use tokio::task;
+    use tokio::sync::mpsc;
+    use tokio::task::JoinHandle;
+    // use async_std::{channel, task};
+    // use async_std::sync::Mutex;
+    // use async_std::task::JoinHandle;
+    use async_tungstenite::tokio::{connect_async, ConnectStream};
     use async_tungstenite::tungstenite::{Message};
     use async_tungstenite::WebSocketStream;
     use futures_util::{SinkExt};
@@ -17,6 +20,7 @@ pub mod websocket {
     use rand::Rng;
     use regex::Regex;
     use serde_json::{Number, Value};
+    use tokio::time::sleep;
     use tracing::{debug, error, info, trace};
 
     use crate::discord_op::opcodes::*;
@@ -50,12 +54,12 @@ pub mod websocket {
             let heartbeat_task = self.heartbeat_task.clone();
             task::spawn(async move {
                 if let Some(task) = heartbeat_task.lock().await.take() {
-                    task.cancel().await;
+                    task.abort();
                 }
             });
 
             if let Some(task) = self.task.take() {
-                task::spawn(task.cancel());
+                task.abort();
             }
         }
     }
@@ -72,16 +76,16 @@ pub mod websocket {
             session_id: String,
             token: String,
             user_id: String,
-            from_gst_rx: channel::Receiver<ToWs>,
-            to_gst_tx: channel::Sender<ToGst>,
-            command_sender: Sender<SocketListenerCommand>,
+            mut from_gst_rx: mpsc::Receiver<ToWs>,
+            to_gst_tx: mpsc::Sender<ToGst>,
+            command_sender: mpsc::Sender<SocketListenerCommand>,
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
             let (mut ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
 
             if response.status() != 101 {
                 error!("Connection failed with response code: {:?}", response.status());
-                let _ = task::block_on(ws_stream.close(None));
+                let _ = ws_stream.close(None).await;
                 return Err(async_tungstenite::tungstenite::Error::ConnectionClosed);
             } else {
                 info!("WebSocket connection successful");
@@ -118,7 +122,8 @@ pub mod websocket {
                             Ok(ws_msg) => {
                                 // Handle close codes
                                 if ws_msg.is_close() {
-                                    if let Err(e) = command_sender.clone().send(SocketListenerCommand::StopStreamInternal) {
+                                    debug!("WebSocket closed");
+                                    if let Err(e) = command_sender.clone().send(SocketListenerCommand::StopStreamInternal).await {
                                         error!("Failed to notify command processor of stream stop: {e}");
                                     }
 
@@ -213,7 +218,7 @@ pub mod websocket {
                                             1.0
                                         };
 
-                                        task::sleep(Duration::from_millis(data.heartbeat_interval * multiplier as u64)).await;
+                                        sleep(Duration::from_millis(data.heartbeat_interval * multiplier as u64)).await;
                                         // TODO: Better error handling
                                         let _ = nonce_arc.lock().await.insert(Self::send_heartbeat(ws_write.lock().await.borrow_mut()).await.expect("Failed to send heartbeat"));
                                         debug!("Sent websocket heartbeat");
@@ -241,7 +246,7 @@ pub mod websocket {
             match Self::auth(ws_write.clone().lock().await.borrow_mut(), server_id, session_id, token, user_id).await {
                 Ok(_) => {}
                 Err(e) => {
-                    ws_listener_task.cancel().await;
+                    ws_listener_task.abort();
                     return Err(e);
                 }
             }
@@ -345,7 +350,7 @@ pub mod websocket {
                 rtc_connection_id,
                 codecs: vec![
                     GatewayCodec {
-                        name: "H264".to_string(),
+                        name: "VP9".to_string(),
                         codec_type: PayloadType::Video,
                         priority: 1000,
                         payload_type: web_rtc_data.video_payload_type,

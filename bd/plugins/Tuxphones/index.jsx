@@ -216,7 +216,7 @@ export default class extends BasePlugin {
         Logger.log(obj)
         switch (obj.type) {
             case 'ApplicationList':
-                Dispatcher.dirtyDispatch({
+                Dispatcher.dispatch({
                     type: 'TUX_APPS',
                     apps: obj.apps
                 });
@@ -286,7 +286,7 @@ export default class extends BasePlugin {
         });
         this.unixClient.on('error', e => {
             Logger.err(`[GetInfo] Socket client error: ${e}`);
-            Dispatcher.dirtyDispatch({
+            Dispatcher.dispatch({
                 type: 'TUX_APPS',
                 apps: []
             });

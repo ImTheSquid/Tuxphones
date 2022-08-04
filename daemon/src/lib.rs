@@ -1,7 +1,6 @@
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc}, thread, time::{Duration, self}};
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, self}};
 use std::process::Command;
 
-use async_std::{channel, task};
 use sysinfo::{Pid, PidExt, Process, ProcessExt, SystemExt};
 use tracing::{error, info};
 
@@ -14,7 +13,9 @@ use u32 as pid;
 use u32 as xid;
 
 use crate::{discord::websocket::{ToGst, WebsocketConnection}, x::XResizeWatcher};
-use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
+use crate::gstreamer::{GstHandle, ToWs, VideoEncoderType};
+
+use tokio::{sync::mpsc::{self, Receiver, Sender, channel}, time::sleep};
 
 mod pulse;
 mod gstreamer;
@@ -24,12 +25,12 @@ mod discord;
 mod discord_op;
 
 pub struct CommandProcessor {
-    thread: Option<thread::JoinHandle<()>>,
+    thread: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl CommandProcessor {
-    pub fn new(receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
-        let thread = thread::spawn(move || {
+    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
+        let thread = tokio::spawn(async move {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
                 Err(e) => {
@@ -106,9 +107,9 @@ impl CommandProcessor {
 
                                 let _ = current_xid.insert(xid);
 
-                                let (to_ws_tx, from_gst_rx): (channel::Sender<ToWs>, channel::Receiver<ToWs>) = channel::unbounded();
-                                let (to_gst_tx, from_ws_rx): (channel::Sender<ToGst>, channel::Receiver<ToGst>) = channel::unbounded();
-                                let (gst_resize_tx, gst_resize_rx) = channel::unbounded();
+                                let (to_ws_tx, from_gst_rx): (Sender<ToWs>, Receiver<ToWs>) = channel(10);
+                                let (to_gst_tx, from_ws_rx): (Sender<ToGst>, Receiver<ToGst>) = channel(10);
+                                let (gst_resize_tx, gst_resize_rx) = channel(10);
 
                                 let _ = resize_watcher.insert(match XResizeWatcher::new(xid, gst_resize_tx, Duration::from_secs(1)) {
                                     Ok(watcher) => watcher,
@@ -119,10 +120,10 @@ impl CommandProcessor {
                                 });
 
                                 // Quick and drity check to try to detect Nvidia drivers
-                                //TODO: Find a better way to do this
-                                let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
-                                    String::from_utf8_lossy(&out.stdout).contains("nvidia")
-                                } else { false };
+                                // TODO: Find a better way to do this
+                                // let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
+                                //     String::from_utf8_lossy(&out.stdout).contains("nvidia")
+                                // } else { false };
 
                                 if !gst_is_loaded {
                                     gst_is_loaded = true;
@@ -130,19 +131,17 @@ impl CommandProcessor {
                                 }
 
                                 let gst = GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings { nvidia_encoder }),
+                                    VideoEncoderType::VP9,
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
                                     *ice,
-                                    to_ws_tx,
-                                    from_ws_rx
-                                ).expect("Failed to initialize gstreamer pipeline");
-                                gst.start().expect("Failed to start stream");
+                                ).await.expect("Failed to initialize gstreamer pipeline");
+                                gst.start(to_ws_tx, from_ws_rx).await.expect("Failed to start stream");
 
                                 let _ = stream.insert(gst);
 
-                                ws = match task::block_on(WebsocketConnection::new(
+                                ws = match WebsocketConnection::new(
                                     endpoint,
                                     framerate,
                                     resolution,
@@ -155,7 +154,7 @@ impl CommandProcessor {
                                     from_gst_rx,
                                     to_gst_tx,
                                     ws_sender.clone(),
-                                )) {
+                                ).await {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
                                         error!("Failed to create websocket connection: {:?}", e);
@@ -251,12 +250,12 @@ impl CommandProcessor {
                         }
                     }
                     Err(e) => match e {
-                        mpsc::TryRecvError::Disconnected => {
+                        mpsc::error::TryRecvError::Disconnected => {
                             error!("Failed to watch for receiver: {}", e);
                             run.store(false, Ordering::SeqCst);
                             break;
                         }
-                        mpsc::TryRecvError::Empty => {
+                        mpsc::error::TryRecvError::Empty => {
                             // Check if time to send a stream preview
                             let send_preview = if stream.is_some() {
                                 if let Some(last) = last_stream_preview {
@@ -276,7 +275,7 @@ impl CommandProcessor {
                                 }
                             }
 
-                            thread::sleep(sleep_time);
+                            sleep(sleep_time).await;
                         }
                     }
                 }
@@ -287,9 +286,9 @@ impl CommandProcessor {
     }
 
     /// Waits for the `CommandProcessor`'s internal thread to join.
-    pub fn join(&mut self) {
+    pub async fn join(&mut self) {
         if let Some(thread) = self.thread.take() {
-            thread.join().expect("Unable to join thread");
+            thread.await.expect("Unable to join thread");
         }
     }
 }

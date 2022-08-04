@@ -1,12 +1,13 @@
 pub mod receive {
-    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
+    use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
+    use tokio::{sync::mpsc, task::{self, JoinHandle}, time::sleep};
     use tracing::{error, info, trace};
     use crate::{pid, xid};
 
     /// Listens on a socket for commands
     pub struct SocketListener {
-        thread: Option<thread::JoinHandle<()>>
+        thread: Option<JoinHandle<()>>
     }
 
     /// Possible errors when creating a `SocketListener`
@@ -107,7 +108,7 @@ pub mod receive {
             }
 
             // Spawn listener thread to check for commands sent to the socket
-            let thread = thread::spawn(move || {
+            let thread = task::spawn(async move {
                 for stream in listener.incoming() {
                     match stream {
                         Ok(mut stream) => {
@@ -123,7 +124,7 @@ pub mod receive {
                             trace!("Received command: {}", buf);
 
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
-                                Ok(cmd) => match sender.send(cmd) {
+                                Ok(cmd) => match sender.send(cmd).await {
                                     Ok(_) => {},
                                     Err(e) => error!("Failed to send command: {}", e)
                                 },
@@ -138,7 +139,7 @@ pub mod receive {
                                 }
                                 break;
                             }
-                            thread::sleep(sleep_time);
+                            sleep(sleep_time).await;
                         }
                         Err(e) => error!("Failed to get stream: {}", e)
                     }
@@ -149,9 +150,9 @@ pub mod receive {
         }
 
         /// Waits for the `SocketListeners`'s internal thread to join.
-        pub fn join(&mut self) {
+        pub async fn join(&mut self) {
             if let Some(thread) = self.thread.take() {
-                thread.join().expect("Unable to join thread");
+                thread.await.expect("Unable to join thread");
             }
         }
     }

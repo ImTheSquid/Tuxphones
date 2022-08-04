@@ -1,17 +1,19 @@
-use std::{rc::Rc, cell::RefCell, ops::Deref};
+use std::{ cell::RefCell, ops::Deref, sync::Arc};
 
 use libpulse_binding::{mainloop::threaded::Mainloop, context::{Context, State, FlagSet as ContextFlagSet}, callbacks::ListResult, operation::Operation};
 use crate::pid;
 
 pub struct PulseHandle {
-    mainloop: Rc<RefCell<Mainloop>>,
-    context: Rc<RefCell<Context>>,
+    mainloop: Arc<RefCell<Mainloop>>,
+    context: Arc<RefCell<Context>>,
     audio_is_setup: bool,
     tuxphones_sink_module_index: Option<u32>,
     combined_sink_index: Option<u32>,
     combined_sink_module_index: Option<u32>,
     current_app_info: Option<CurrentAppInfo>
 }
+
+unsafe impl Send for PulseHandle {}
 
 struct CurrentAppInfo {
     sink_input_restore_index: u32,
@@ -99,7 +101,7 @@ impl Drop for PulseHandle {
 impl PulseHandle {
     /// Creates a new Pulse handle
     pub fn new() -> Result<PulseHandle, PulseInitializationError> {
-        let mainloop = Rc::new(RefCell::new(match Mainloop::new() {
+        let mainloop = Arc::new(RefCell::new(match Mainloop::new() {
             Some(l) => l,
             None => return Err(PulseInitializationError::NoAlloc)
         }));
@@ -112,7 +114,7 @@ impl PulseHandle {
         // Lock mainloop to create context
         mainloop.borrow_mut().lock();
 
-        let context = Rc::new(RefCell::new(match Context::new(mainloop.borrow_mut().deref(), "tuxphones")  {
+        let context = Arc::new(RefCell::new(match Context::new(mainloop.borrow_mut().deref(), "tuxphones")  {
             Some(c) => c,
             None => {
                 mainloop.borrow_mut().unlock();
@@ -123,8 +125,8 @@ impl PulseHandle {
 
         // State callback to wait for connection
         {
-            let ml_ref = Rc::clone(&mainloop);
-            let context_ref = Rc::clone(&context);
+            let ml_ref = Arc::clone(&mainloop);
+            let context_ref = Arc::clone(&context);
             context.borrow_mut().set_state_callback(Some(Box::new(move || {
                 // Needs to be unsafe to be able to borrow mutably multiple times
                 match unsafe { (*context_ref.as_ptr()).get_state() } {
@@ -159,8 +161,8 @@ impl PulseHandle {
         mainloop.borrow_mut().unlock();
 
         Ok(PulseHandle { 
-            context: Rc::clone(&context), 
-            mainloop: Rc::clone(&mainloop), 
+            context: Arc::clone(&context), 
+            mainloop: Arc::clone(&mainloop), 
             audio_is_setup: false, 
             tuxphones_sink_module_index: None, 
             combined_sink_index: None,
@@ -172,10 +174,10 @@ impl PulseHandle {
     /// Gets the sinks connected to the Pulse server
     pub fn get_sinks(&mut self) -> Vec<BasicSinkInfo> {
         self.mainloop.borrow_mut().lock();
-        let results = Rc::new(RefCell::new(Some(vec![])));
+        let results = Arc::new(RefCell::new(Some(vec![])));
 
-        let ml_ref = Rc::clone(&self.mainloop);
-        let results_ref = Rc::clone(&results);
+        let ml_ref = Arc::clone(&self.mainloop);
+        let results_ref = Arc::clone(&results);
         let op = self.context.borrow_mut().introspect().get_sink_info_list(move |res| {
             match res {
                 ListResult::Item(info) => results_ref.borrow_mut().as_mut().unwrap().push(BasicSinkInfo { 
@@ -201,10 +203,10 @@ impl PulseHandle {
     pub fn get_audio_applications(&mut self) -> Vec<AudioApplication> {
         self.mainloop.borrow_mut().lock();
 
-        let results = Rc::new(RefCell::new(Some(vec![])));
+        let results = Arc::new(RefCell::new(Some(vec![])));
 
-        let ml_ref = Rc::clone(&self.mainloop);
-        let results_ref = Rc::clone(&results);
+        let ml_ref = Arc::clone(&self.mainloop);
+        let results_ref = Arc::clone(&results);
         let op = self.context.borrow_mut().introspect().get_sink_input_info_list(move |res| {
             match res {
                 ListResult::Item(info) => {
@@ -242,9 +244,9 @@ impl PulseHandle {
             Some(s) => s.to_string(),
             None => {
                 self.mainloop.borrow_mut().lock();
-                let result: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
-                let ml_ref = Rc::clone(&self.mainloop);
-                let res_ref = Rc::clone(&result);
+                let result: Arc<RefCell<Option<String>>> = Arc::new(RefCell::new(None));
+                let ml_ref = Arc::clone(&self.mainloop);
+                let res_ref = Arc::clone(&result);
                 let op = self.context.borrow_mut().introspect().get_sink_info_by_name("@DEFAULT_SINK@", move |info| unsafe {
                     match info {
                         ListResult::Item(sink) => res_ref.borrow_mut().replace(sink.name.as_ref().map_or(String::from("unknown name"), |n| { n.to_string() })),
@@ -284,7 +286,7 @@ impl PulseHandle {
 
         self.mainloop.borrow_mut().lock();
         if !tux_sink_found {
-            let ml_ref = Rc::clone(&self.mainloop);
+            let ml_ref = Arc::clone(&self.mainloop);
             let op = self.context.borrow_mut().introspect().load_module(
                 "module-null-sink", 
                 "sink_name=tuxphones sink_properties=device.description=tuxphones", 
@@ -297,7 +299,7 @@ impl PulseHandle {
         }
 
         if !tux_combined_sink_found {
-            let ml_ref = Rc::clone(&self.mainloop);
+            let ml_ref = Arc::clone(&self.mainloop);
             // adjust_time=0 prevents a crash for some reason
             let op = self.context.borrow_mut().introspect().load_module(
                 "module-combine-sink", 
@@ -354,7 +356,7 @@ impl PulseHandle {
 
     /// Unloads modules
     fn unload_module(&mut self, idx: u32) {
-        let ml_ref = Rc::clone(&self.mainloop);
+        let ml_ref = Arc::clone(&self.mainloop);
         let op = self.context.borrow_mut().introspect().unload_module(idx, move |_| unsafe {
             (*ml_ref.as_ptr()).signal(false);
         });
@@ -372,7 +374,7 @@ impl PulseHandle {
             if app.pid == pid {
                 self.mainloop.borrow_mut().lock();
 
-                let ml_ref = Rc::clone(&self.mainloop);
+                let ml_ref = Arc::clone(&self.mainloop);
                 self.current_app_info = Some(CurrentAppInfo {
                     sink_input_restore_index: app.sink_index,
                     index: app.index
@@ -397,7 +399,7 @@ impl PulseHandle {
         self.mainloop.borrow_mut().lock();
 
         if let Some(info) = &self.current_app_info {
-            let ml_ref = Rc::clone(&self.mainloop);
+            let ml_ref = Arc::clone(&self.mainloop);
             let op = self.context.borrow_mut().introspect().move_sink_input_by_index(info.index, info.sink_input_restore_index, Some(Box::new(move |_| unsafe {
                 (*ml_ref.as_ptr()).signal(false);
             })));
