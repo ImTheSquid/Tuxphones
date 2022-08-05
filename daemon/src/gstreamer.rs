@@ -213,15 +213,9 @@ impl GstHandle {
         // let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         // webrtcbin.set_property_from_str("bundle-policy", "max-bundle");
 
-        let stun_server = ice.urls.iter().find(|url| url.starts_with("stun:")).unwrap();
-
-        //TODO: Find a way to sanitize ice.username and ice.password
-        let turn_auth = format!("turn://{}:{}@", ice.username, ice.credential.replace('+', "-").replace('/', "_"));
-        let turn_servers = ice.urls.iter().filter(|url| url.starts_with("turn:")).map(|url| url.replace("turn:", &turn_auth)).collect::<Vec<_>>();
-        debug!("Using STUN server: {:?}", stun_server);
-        debug!("Using TURN servers: {:?}", turn_servers);
+        debug!("Using ICE servers: {:?}", ice.urls);
         // webrtcbin.set_property_from_str("stun-server", &stun_server);
-        webrtcredux.lock().await.add_ice_servers(vec![RTCIceServer {urls:vec![stun_server.to_string()], .. RTCIceServer::default() }]);
+        webrtcredux.lock().await.add_ice_servers(vec![RTCIceServer {urls: ice.urls, username: ice.username, credential: ice.credential, .. RTCIceServer::default() }]);
 
         //TODO: Use the for after instead of this before release
         // webrtcbin.set_property_from_str("turn-server", &turn_servers[0]);
@@ -520,14 +514,32 @@ impl GstHandle {
         let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
 
         self.webrtcredux.lock().await.on_peer_connection_state_change(Box::new(move |state| {
-            debug!("Peer connection state changed to: {}", state);
+            debug!("[WebRTC] Peer connection state changed to: {}", state);
 
             Box::pin(async {})
         })).await.expect("Failed to set on peer connection state change");
 
         let redux_arc = self.webrtcredux.clone();
+        self.webrtcredux.lock().await.on_negotiation_needed(Box::new(move || {
+            let redux_arc = redux_arc.clone();
+
+            info!("[WebRTC] Negotiation needed");
+
+            Box::pin(async move {
+                // Waits for all tracks to be added to create full SDP
+                redux_arc.lock().await.wait_for_all_tracks().await;
+
+                let offer = redux_arc.lock().await.create_offer(None).await.expect("Failed to create offer");
+                redux_arc.lock().await.set_local_description(&offer, RTCSdpType::Offer).await.expect("Failed to set local description");
+
+                info!("[WebRTC] Local description set");
+            })
+        })).await.expect("Failed to set on negotiation needed");
+
+        let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_ice_gathering_state_change(Box::new(move |state| {
-            debug!("ICE gathering state changed to: {}", state);
+            debug!("[WebRTC] ICE gathering state changed to: {}", state);
+            
             let redux_arc = redux_arc.clone();
             let to_ws_tx = to_ws_tx.clone();
             let from_ws_rx = arc_from_ws.clone();
@@ -632,7 +644,7 @@ impl GstHandle {
                             let current = prop.clone();
                             match prop {
                                 MediaProp::Connection { address, .. } => main_ip = Some(address),
-                                MediaProp::Attribute { key, value } => {
+                                MediaProp::Attribute { key, value: _ } => {
                                     match &key[..] {
                                         "candidate" => candidate = Some(current),
                                         "fingerprint" => fingerprint = Some(current),
@@ -806,20 +818,13 @@ impl GstHandle {
                         trace!("Generated remote SDP: {:#?}", answer);
 
                         redux_arc.lock().await.set_remote_description(&answer, RTCSdpType::Answer).await.expect("Failed to set remote description");
+
+                        info!("[WebRTC] Remote description set");
                     }
                     _ => unreachable!()
                 }
             })
         })).await.expect("Failed to set on ice gathering change");
-
-        // Waits for all tracks to be added to create full SDP
-        self.webrtcredux.lock().await.wait_for_all_tracks().await;
-
-        debug!("All tracks added");
-
-        let offer = self.webrtcredux.lock().await.create_offer(None).await.expect("Failed to create offer");
-        self.webrtcredux.lock().await.set_local_description(&offer, RTCSdpType::Offer).await.expect("Failed to set local description");
-        info!("Local description set");
 
         Ok(StateChangeSuccess::Success)
     }
@@ -832,113 +837,113 @@ impl GstHandle {
 //     }
 // }
 
-fn get_filtered_sdp(sdp: String) -> String {
-    sdp.split("\r\n")
-        .filter_map(|line| {
-            if !line.starts_with("a=candidate") {
-                return Some(line.to_string());
-            }
+// fn get_filtered_sdp(sdp: String) -> String {
+//     sdp.split("\r\n")
+//         .filter_map(|line| {
+//             if !line.starts_with("a=candidate") {
+//                 return Some(line.to_string());
+//             }
 
-            let tokens = line.split(' ').collect::<Vec<&str>>();
+//             let tokens = line.split(' ').collect::<Vec<&str>>();
 
-            if tokens[2] == "TCP" {
-                return None;
-            }
+//             if tokens[2] == "TCP" {
+//                 return None;
+//             }
 
-            Some(tokens.join(" "))
-        }).collect::<Vec<String>>().join("\n")
-}
+//             Some(tokens.join(" "))
+//         }).collect::<Vec<String>>().join("\n")
+// }
 
-fn new_sdp_audio_media(payload: u32, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
-    let mut media = SDPMedia::new();
-    media.set_media("audio");
-    media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", payload).as_str());
+// fn new_sdp_audio_media(payload: u32, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
+//     let mut media = SDPMedia::new();
+//     media.set_media("audio");
+//     media.set_proto(format!("UDP/TLS/RTP/SAVPF {}", payload).as_str());
 
-    media.add_attribute("fmtp", Some(&format!("{} minptime=10;useinbandfec=1;usedtx=1", payload)));
+//     media.add_attribute("fmtp", Some(&format!("{} minptime=10;useinbandfec=1;usedtx=1", payload)));
 
-    media.add_attribute("maxptime", Some("60"));
+//     media.add_attribute("maxptime", Some("60"));
 
-    media.add_attribute("rtpmap", Some(&format!("{} opus/90000", payload)));
+//     media.add_attribute("rtpmap", Some(&format!("{} opus/90000", payload)));
 
-    media.add_attribute("rtcp-fb", Some(&format!("{} transport-cc", payload)));
+//     media.add_attribute("rtcp-fb", Some(&format!("{} transport-cc", payload)));
 
-    media.add_attribute("mid", Some(&format!("audio{}", mid)));
+//     media.add_attribute("mid", Some(&format!("audio{}", mid)));
 
-    [
-        "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
-        "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
-    ].into_iter().for_each(|ext| {
-        media.add_attribute("extmap", Some(ext));
-    });
+//     [
+//         "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
+//         "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
+//     ].into_iter().for_each(|ext| {
+//         media.add_attribute("extmap", Some(ext));
+//     });
 
-    fill_media_minimal(&mut media, attrs);
+//     fill_media_minimal(&mut media, attrs);
 
-    media
-}
+//     media
+// }
 
-fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderType, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
-    let mut media = SDPMedia::new();
-    media.set_media("video");
-    media.set_proto(format!("UDP/TLS/RTP/SAVPF {} {}", payload, rtx_payload).as_str());
+// fn new_sdp_video_media(payload: u32, rtx_payload: u32, encoder: &VideoEncoderType, mid: u8, attrs: &MediaAttributes) -> SDPMedia {
+//     let mut media = SDPMedia::new();
+//     media.set_media("video");
+//     media.set_proto(format!("UDP/TLS/RTP/SAVPF {} {}", payload, rtx_payload).as_str());
 
-    media.add_attribute("fmtp", Some(&format!("{} x-google-max-bitrate=2500;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", payload)));
-    media.add_attribute("fmtp", Some(&format!("{} apt={}", rtx_payload, payload)));
+//     media.add_attribute("fmtp", Some(&format!("{} x-google-max-bitrate=2500;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", payload)));
+//     media.add_attribute("fmtp", Some(&format!("{} apt={}", rtx_payload, payload)));
 
-    ["ccm fir", "nack", "nack pli", "goog-remb", "transport-cc"].into_iter().for_each(|val| {
-        media.add_attribute("rtcp-fb", Some(&format!("{} {}", payload, val)));
-    });
+//     ["ccm fir", "nack", "nack pli", "goog-remb", "transport-cc"].into_iter().for_each(|val| {
+//         media.add_attribute("rtcp-fb", Some(&format!("{} {}", payload, val)));
+//     });
 
-    [
-        "2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time", 
-        "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
-        "14 urn:ietf:params:rtp-hdrext:toffset",
-        "13 urn:3gpp:video-orientation",
-        "5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
-    ].into_iter().for_each(|ext| {
-        media.add_attribute("extmap", Some(ext));
-    });
+//     [
+//         "2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time", 
+//         "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+//         "14 urn:ietf:params:rtp-hdrext:toffset",
+//         "13 urn:3gpp:video-orientation",
+//         "5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+//     ].into_iter().for_each(|ext| {
+//         media.add_attribute("extmap", Some(ext));
+//     });
 
-    media.add_attribute("rtpmap", Some(&format!("{} {}/90000", payload, encoder.type_string())));
-    media.add_attribute("rtpmap", Some(&format!("{} rtx/90000", rtx_payload)));
+//     media.add_attribute("rtpmap", Some(&format!("{} {}/90000", payload, encoder.type_string())));
+//     media.add_attribute("rtpmap", Some(&format!("{} rtx/90000", rtx_payload)));
 
-    media.add_attribute("mid", Some(&format!("video{}", mid)));
+//     media.add_attribute("mid", Some(&format!("video{}", mid)));
 
-    fill_media_minimal(&mut media, attrs);
+//     fill_media_minimal(&mut media, attrs);
 
-    media
-}
+//     media
+// }
 
-struct MediaAttributes<'a> {
-    main_ip: &'a str,
-    port: u16,
-    // mid: u8,
-    ufrag: &'a str,
-    pwd: &'a str,
-    fingerprint: &'a str,
-    candidate: &'a str
-}
+// struct MediaAttributes<'a> {
+//     main_ip: &'a str,
+//     port: u16,
+//     // mid: u8,
+//     ufrag: &'a str,
+//     pwd: &'a str,
+//     fingerprint: &'a str,
+//     candidate: &'a str
+// }
 
-/// Fills the media with common attributes
-fn fill_media_minimal(media: &mut SDPMedia, attrs: &MediaAttributes) {
-    media.set_port_info(attrs.port.into(), 0);
-    media.add_connection("IN", "IP4", attrs.main_ip, 127, 0);
+// /// Fills the media with common attributes
+// fn fill_media_minimal(media: &mut SDPMedia, attrs: &MediaAttributes) {
+//     media.set_port_info(attrs.port.into(), 0);
+//     media.add_connection("IN", "IP4", attrs.main_ip, 127, 0);
 
-    // media.add_attribute("mid", Some(&attrs.mid.to_string()));
+//     // media.add_attribute("mid", Some(&attrs.mid.to_string()));
 
-    // Should probably be None, but doing so causes a segfault
-    media.add_attribute("rtcp-mux", Some(""));
+//     // Should probably be None, but doing so causes a segfault
+//     media.add_attribute("rtcp-mux", Some(""));
 
-    media.add_attribute("rtcp", Some(&attrs.port.to_string()));
+//     media.add_attribute("rtcp", Some(&attrs.port.to_string()));
 
-    media.add_attribute("setup", Some("passive"));
+//     media.add_attribute("setup", Some("passive"));
 
-    // Should probably be None, but doing so causes a segfault
-    media.add_attribute("inactive", Some(""));
+//     // Should probably be None, but doing so causes a segfault
+//     media.add_attribute("inactive", Some(""));
 
-    media.add_attribute("ice-ufrag", Some(attrs.ufrag));
-    media.add_attribute("ice-pwd", Some(attrs.pwd));
+//     media.add_attribute("ice-ufrag", Some(attrs.ufrag));
+//     media.add_attribute("ice-pwd", Some(attrs.pwd));
 
-    media.add_attribute("fingerprint", Some(attrs.fingerprint));
+//     media.add_attribute("fingerprint", Some(attrs.fingerprint));
 
-    media.add_attribute("candidate", Some(attrs.candidate));
-}
+//     media.add_attribute("candidate", Some(attrs.candidate));
+// }
