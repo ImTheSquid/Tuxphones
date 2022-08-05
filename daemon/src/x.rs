@@ -76,12 +76,20 @@ impl XServerHandle {
             pixel.0 = [pixel.0[2], pixel.0[1], pixel.0[0], pixel.0[3]];
         }
 
+        let (width, height) = calculate_aspect_ratio_fit(image.width(), image.height(), 512, 512);
+
         // Resize image to reasonable thumbnail size
-        let image = image::imageops::resize(&image, 512, 512, image::imageops::FilterType::Triangle);
+        let image = image::imageops::resize(&image, width, height, image::imageops::FilterType::Triangle);
         image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
         
         Ok(buf.into_inner())
     }
+}
+
+fn calculate_aspect_ratio_fit(src_width: u32, src_height: u32, max_width: u32, max_height: u32) -> (u32, u32) {
+    let ratio = f64::min(max_width as f64 / src_width as f64,max_height as f64 / src_height as f64);
+
+    ((src_width as f64 * ratio).round() as u32, (src_height as f64 * ratio).round() as u32)
 }
 
 pub struct XResizeWatcher {

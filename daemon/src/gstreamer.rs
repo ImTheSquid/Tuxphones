@@ -5,8 +5,8 @@ use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError,
 use gst::prelude::*;
 use gst_sdp::SDPMedia;
 use tokio::runtime::Handle;
-use tracing::{debug, error, info};
-use webrtcredux::sdp::{SdpProp, MediaType, MediaProp};
+use tracing::{debug, error, info, trace};
+use webrtcredux::sdp::{SdpProp, MediaType, MediaProp, NetworkType, AddressType};
 use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
@@ -519,6 +519,12 @@ impl GstHandle {
 
         let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
 
+        self.webrtcredux.lock().await.on_peer_connection_state_change(Box::new(move |state| {
+            debug!("Peer connection state changed to: {}", state);
+
+            Box::pin(async {})
+        })).await.expect("Failed to set on peer connection state change");
+
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_ice_gathering_state_change(Box::new(move |state| {
             debug!("ICE gathering state changed to: {}", state);
@@ -532,7 +538,6 @@ impl GstHandle {
             
             Box::pin(async move {
                 let local = redux_arc.lock().await.local_description().await.unwrap().unwrap();
-                println!("Local SDP: {:#?}", local);
 
                 let video_media: &SdpProp = local.props.iter().find(|v| match *v {
                     SdpProp::Media { r#type, .. } => {
@@ -615,7 +620,195 @@ impl GstHandle {
 
                 let from_ws = from_ws_rx.lock().await.recv().await.unwrap();
 
-                println!("Received remote SDP: {:#?}", SDP::from_str(&from_ws.remote_sdp).unwrap());
+                match SDP::from_str(&from_ws.remote_sdp).unwrap().props.pop().unwrap() {
+                    SdpProp::Media { ports, props, .. } => {
+                        let mut main_ip = None;
+                        let mut fingerprint = None;
+                        let mut ufrag = None;
+                        let mut pwd = None;
+                        let mut candidate = None;
+
+                        for prop in props {
+                            let current = prop.clone();
+                            match prop {
+                                MediaProp::Connection { address, .. } => main_ip = Some(address),
+                                MediaProp::Attribute { key, value } => {
+                                    match &key[..] {
+                                        "candidate" => candidate = Some(current),
+                                        "fingerprint" => fingerprint = Some(current),
+                                        "ice-ufrag" => ufrag = Some(current),
+                                        "ice-pwd" => pwd = Some(current),
+                                        _ => continue
+                                    }
+                                }
+                                _ => continue
+                            }
+                        }
+
+                        let connection = MediaProp::Connection {
+                            net_type: NetworkType::Internet,
+                            address_type: AddressType::IPv4,
+                            address: main_ip.unwrap(),
+                            ttl: Some(127),
+                            num_addresses: Some(1),
+                            suffix: None,
+                        };
+
+                        let base_media_props = vec![
+                            connection,
+                            // candidate.unwrap(),
+                            fingerprint.unwrap(),
+                            ufrag.unwrap(),
+                            pwd.unwrap(),
+                            MediaProp::Attribute {
+                                key: "rtcp-mux".to_string(),
+                                value: None
+                            },
+                            MediaProp::Attribute {
+                                key: "rtcp".to_string(),
+                                value: Some(ports[0].to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "setup".to_string(),
+                                value: Some("passive".to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "inactive".to_string(),
+                                value: None
+                            }
+                        ];
+
+                        let mut video_vec_attrs = ["ccm fir", "nack", "nack pli", "goog-remb", "transport-cc"].into_iter().map(|val| {
+                            MediaProp::Attribute {
+                                key: "rtcp-fb".to_string(),
+                                value: Some(format!("{} {}", video_payload_type, val))
+                            }
+                        }).collect::<Vec<_>>();
+
+                        video_vec_attrs.append(&mut [
+                            "2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time", 
+                            "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+                            "14 urn:ietf:params:rtp-hdrext:toffset",
+                            "13 urn:3gpp:video-orientation",
+                            "5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
+                        ].into_iter().map(|ext| {
+                            MediaProp::Attribute {
+                                key: "extmap".to_string(),
+                                value: Some(ext.to_string())
+                            }
+                        }).collect::<Vec<_>>());
+
+                        video_vec_attrs.append(&mut vec![
+                            MediaProp::Attribute { 
+                                key: "fmtp".to_string(), 
+                                value: Some(format!("{} x-google-max-bitrate=2500;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", video_payload_type))
+                            },
+                            MediaProp::Attribute {
+                                key: "fmtp".to_string(),
+                                value: Some(format!("{} apt={}", rtx_payload_type, video_payload_type))
+                            },
+                            MediaProp::Attribute {
+                                key: "mid".to_string(),
+                                value: Some(0.to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "rtpmap".to_string(),
+                                value: Some(format!("{} {}/90000", video_payload_type, encoder.type_string()))
+                            },
+                            MediaProp::Attribute {
+                                key: "rtpmap".to_string(),
+                                value: Some(format!("{} rtx/90000", rtx_payload_type))
+                            },
+                            candidate.unwrap(),
+                            MediaProp::Attribute {
+                                key: "end-of-candidates".to_string(),
+                                value: None
+                            }
+                        ]);
+
+                        let video_media = SdpProp::Media {
+                            r#type: MediaType::Video,
+                            ports: ports.clone(),
+                            protocol: format!("UDP/TLS/RTP/SAVPF {} {}", video_payload_type, rtx_payload_type),
+                            format: "".to_string(),
+                            props: base_media_props.clone().into_iter().chain(video_vec_attrs.into_iter()).collect::<Vec<_>>()
+                        };
+
+                        let mut audio_vec_attrs = [
+                            "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
+                            "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
+                        ].into_iter().map(|ext| {
+                            MediaProp::Attribute {
+                                key: "extmap".to_string(),
+                                value: Some(ext.to_string())
+                            }
+                        }).collect::<Vec<_>>();
+
+                        audio_vec_attrs.append(&mut vec![
+                            MediaProp::Attribute {
+                                key: "fmtp".to_string(),
+                                value: Some("111 minptime=10;useinbandfec=1;usedtx=1".to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "maxptime".to_string(),
+                                value: Some(60.to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "rtpmap".to_string(),
+                                value: Some("111 opus/90000".to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "rtcp-fb".to_string(),
+                                value: Some("111 transport-cc".to_string())
+                            },
+                            MediaProp::Attribute {
+                                key: "mid".to_string(),
+                                value: Some(1.to_string())
+                            }
+                        ]);
+
+                        let audio_media = SdpProp::Media {
+                            r#type: MediaType::Audio,
+                            ports,
+                            protocol: "UDP/TLS/RTP/SAVPF 111".to_string(),
+                            format: "".to_string(),
+                            props: base_media_props.clone().into_iter().chain(audio_vec_attrs.into_iter()).collect::<Vec<_>>()
+                        };
+
+                        // Generate answer
+                        let answer = SDP { props: vec![
+                            SdpProp::Version(0),
+                            SdpProp::Origin { 
+                                username: "-".to_string(), 
+                                session_id: "1420070400000".to_string(), 
+                                session_version: 0, 
+                                net_type: NetworkType::Internet, 
+                                address_type: AddressType::IPv4, 
+                                address: "127.0.0.1".to_string() 
+                            },
+                            SdpProp::SessionName("-".to_string()),
+                            SdpProp::Timing {
+                                start: 0,
+                                stop: 0
+                            },
+                            SdpProp::Attribute {
+                                key: "msid-semantic".to_string(),
+                                value: Some(" WMS *".to_string())
+                            },
+                            SdpProp::Attribute {
+                                key: "group".to_string(),
+                                value: Some("BUNDLE 0 1".to_string())
+                            },
+                            video_media,
+                            audio_media
+                        ]};
+
+                        trace!("Generated remote SDP: {:#?}", answer);
+
+                        redux_arc.lock().await.set_remote_description(&answer, RTCSdpType::Answer).await.expect("Failed to set remote description");
+                    }
+                    _ => unreachable!()
+                }
             })
         })).await.expect("Failed to set on ice gathering change");
 
