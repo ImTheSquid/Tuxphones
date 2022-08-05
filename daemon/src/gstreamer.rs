@@ -1,14 +1,13 @@
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, Promise, SerializeFlags, StateChangeError, StateChangeSuccess};
+use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
-use gst_sdp::{SDPMedia, SDPMessage};
-use gst_webrtc::{WebRTCICEGatheringState, WebRTCRTPTransceiver, WebRTCSDPType, WebRTCSessionDescription};
+use gst_sdp::SDPMedia;
 use tokio::runtime::Handle;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info};
 use webrtcredux::sdp::{SdpProp, MediaType, MediaProp};
-use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceCandidateInit, RTCIceGathererState};
+use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
 use crate::{receive::StreamResolutionInformation, ToGst, xid};
@@ -58,6 +57,7 @@ pub struct H264Settings {
 }
 
 #[derive(Clone, Copy)]
+#[allow(dead_code)]
 pub enum VideoEncoderType {
     H264(H264Settings),
     VP8,
@@ -92,7 +92,6 @@ impl From<PadLinkError> for GstInitializationError {
     }
 }
 
-#[derive(Debug)]
 pub struct GstHandle {
     pipeline: gst::Pipeline,
     // webrtcbin: Element,
