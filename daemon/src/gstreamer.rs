@@ -213,9 +213,26 @@ impl GstHandle {
         // let webrtcbin = gst::ElementFactory::make("webrtcbin", None)?;
         // webrtcbin.set_property_from_str("bundle-policy", "max-bundle");
 
-        debug!("Using ICE servers: {:?}", ice.urls);
+        let servers = ice.urls.into_iter().map(|url| {
+            if url.starts_with("turn") {
+                RTCIceServer {
+                    urls: vec![url],
+                    username: ice.username.clone(),
+                    credential: ice.credential.clone(),
+                    .. RTCIceServer::default()
+                }
+            } else {
+                RTCIceServer {
+                    urls: vec![url],
+                    .. RTCIceServer::default()
+                }
+            }
+        }).collect::<Vec<_>>();
+
+        debug!("Using ICE servers: {:#?}", servers);
+
         // webrtcbin.set_property_from_str("stun-server", &stun_server);
-        webrtcredux.lock().await.add_ice_servers(vec![RTCIceServer {urls: ice.urls, username: ice.username, credential: ice.credential, .. RTCIceServer::default() }]);
+        webrtcredux.lock().await.add_ice_servers(servers);
 
         //TODO: Use the for after instead of this before release
         // webrtcbin.set_property_from_str("turn-server", &turn_servers[0]);
