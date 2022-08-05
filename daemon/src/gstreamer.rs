@@ -513,11 +513,25 @@ impl GstHandle {
 
         let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
 
-        self.webrtcredux.lock().await.on_peer_connection_state_change(Box::new(move |state| {
+        self.webrtcredux.lock().await.on_peer_connection_state_change(Box::new(|state| {
             debug!("[WebRTC] Peer connection state changed to: {}", state);
 
             Box::pin(async {})
         })).await.expect("Failed to set on peer connection state change");
+
+        self.webrtcredux.lock().await.on_ice_connection_state_change(Box::new(|state| {
+            debug!("[WebRTC] ICE connection state changed to: {}", state);
+
+            Box::pin(async {})
+        })).await.expect("Failed to set on ice connection state change");
+
+        // let redux_arc = self.webrtcredux.clone();
+        // self.webrtcredux.lock().await.on_ice_candidate(Box::new(move |candidate| {
+        //     let redux_arc = redux_arc.clone();
+        //     Box::pin(async move {
+        //         redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
+        //     })
+        // })).await.expect("Failed ice candidate");
 
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_negotiation_needed(Box::new(move || {
@@ -530,6 +544,9 @@ impl GstHandle {
                 redux_arc.lock().await.wait_for_all_tracks().await;
 
                 let offer = redux_arc.lock().await.create_offer(None).await.expect("Failed to create offer");
+
+                trace!("[WebRTC] Generated local SDP: {:#?}", offer);
+
                 redux_arc.lock().await.set_local_description(&offer, RTCSdpType::Offer).await.expect("Failed to set local description");
 
                 info!("[WebRTC] Local description set");
@@ -539,13 +556,13 @@ impl GstHandle {
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_ice_gathering_state_change(Box::new(move |state| {
             debug!("[WebRTC] ICE gathering state changed to: {}", state);
-            
+
             let redux_arc = redux_arc.clone();
             let to_ws_tx = to_ws_tx.clone();
             let from_ws_rx = arc_from_ws.clone();
 
             if state != RTCIceGathererState::Complete {
-                return Box::pin(async move {});
+                return Box::pin(async {});
             }
             
             Box::pin(async move {
@@ -815,7 +832,7 @@ impl GstHandle {
                             audio_media
                         ]};
 
-                        trace!("Generated remote SDP: {:#?}", answer);
+                        trace!("[WebRTC] Generated remote SDP: {:#?}", answer);
 
                         redux_arc.lock().await.set_remote_description(&answer, RTCSdpType::Answer).await.expect("Failed to set remote description");
 
