@@ -543,12 +543,16 @@ impl GstHandle {
         })).await.expect("Failed to set on ice connection state change");
 
         // let redux_arc = self.webrtcredux.clone();
-        // self.webrtcredux.lock().await.on_ice_candidate(Box::new(move |candidate| {
-        //     let redux_arc = redux_arc.clone();
-        //     Box::pin(async move {
-        //         redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
-        //     })
-        // })).await.expect("Failed ice candidate");
+        self.webrtcredux.lock().await.on_ice_candidate(Box::new(move |candidate| {
+            // let redux_arc = redux_arc.clone();
+
+            Box::pin(async move {
+                if let Some(candidate) = candidate {
+                    debug!("ICE Candidate: {:#?}", candidate.to_json().await.unwrap());
+                }
+                // redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
+            })
+        })).await.expect("Failed ice candidate");
 
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_negotiation_needed(Box::new(move || {
