@@ -1,3 +1,4 @@
 daemon/target/
 bd/node_modules/
 .idea
+.vscode

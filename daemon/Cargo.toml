@@ -32,3 +32,4 @@ base64 = "0.13.0"
 gst-plugin-webrtcredux = {path="../../gst-webrtcredux"}
 tokio = "1.20.1"
 tokio-native-tls = "0.3.0"
+tracing-log = "0.1.3"

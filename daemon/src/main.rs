@@ -1,6 +1,7 @@
 use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}}, process, panic, env, path::Path, fs};
 use tokio::{signal::{ctrl_c, unix::SignalKind}, sync::mpsc};
 use tracing::{error, info, Level};
+use tracing_log::LogTracer;
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{receive::SocketListener, CommandProcessor};
 
@@ -37,6 +38,8 @@ async fn main() {
             eprintln!("Failed to set global logging default subscriber: {}", e);
         }
     }
+
+    LogTracer::init().unwrap();
 
     let run = Arc::new(AtomicBool::new(true));
     let r= Arc::clone(&run);
