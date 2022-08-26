@@ -1130,6 +1130,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-webrtcredux"
 version = "0.2.1"
+source = "git+https://github.com/ImTheSquid/gst-webrtcredux?branch=bin#fa1ec2ef0bb4163e9a7da13d33d6699f5d64db88"
 dependencies = [
  "anyhow",
  "bytes",
