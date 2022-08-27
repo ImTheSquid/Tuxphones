@@ -101,25 +101,25 @@ export default class extends BasePlugin {
                 this.webSocketControlObj.streamSetPaused(this.streamKey, false);
 
                 this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
-                return;
+                return new Promise(res => res());
             } else if (this.currentSoundProfile) {
                 // Hide the stream's existence from Discord until ready to test Tuxphones/Discord interaction
                 switch (arg.type) {
                     case 'STREAM_CREATE':
                         this.serverId = arg.rtcServerId;
-                        return;
+                        return new Promise(res => res());
                     case 'STREAM_UPDATE':
                         // this.streamKey = arg.streamKey;
-                        return;
+                        return new Promise(res => res());
                     case 'VOICE_STATE_UPDATES':
                         arg.voiceStates[0].selfStream = false;
                         break;
                 }
             } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
                 Logger.log(arg)
-            }/* else {
-                Logger.log(arg.type)
-            }*/
+            }else {
+                // Logger.log(arg)
+            }
             return original(arg);
         });
 

@@ -378,13 +378,13 @@ function buildPlugin([BasePlugin, PluginApi]) {
 						this.streamKey = arg.streamKey;
 						this.webSocketControlObj.streamSetPaused(this.streamKey, false);
 						this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
-						return;
+						return new Promise((res => res()));
 					} else if (this.currentSoundProfile) switch (arg.type) {
 						case "STREAM_CREATE":
 							this.serverId = arg.rtcServerId;
-							return;
+							return new Promise((res => res()));
 						case "STREAM_UPDATE":
-							return;
+							return new Promise((res => res()));
 						case "VOICE_STATE_UPDATES":
 							arg.voiceStates[0].selfStream = false;
 							break;
