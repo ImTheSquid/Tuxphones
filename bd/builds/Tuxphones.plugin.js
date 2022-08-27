@@ -297,9 +297,9 @@ function buildPlugin([BasePlugin, PluginApi]) {
 			Dispatcher
 		} = DiscordModules;
 		const React = BdApi.React;
-		const AuthenticationStore = BdApi.findModule((m => m.default.getToken)).default;
-		const RTCConnectionStore = BdApi.findAllModules((m => m.default.getRTCConnectionId))[1].default;
-		const UserStatusStore = BdApi.findModule((m => m.default.getVoiceChannelId)).default;
+		const AuthenticationStore = BdApi.findModule((m => m.default?.getToken)).default;
+		const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
+		const UserStatusStore = BdApi.findModule((m => m.default?.getVoiceChannelId)).default;
 		const WebRequests = BdApi.findModule((m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete)).default;
 		const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
 		const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
@@ -389,7 +389,7 @@ function buildPlugin([BasePlugin, PluginApi]) {
 							arg.voiceStates[0].selfStream = false;
 							break;
 					} else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) Logger.log(arg);
-					original(arg);
+					return original(arg);
 				}));
 				ContextMenu.getDiscordMenu("GoLiveModal").then((m => {
 					Patcher.after(m, "default", ((_, __, ret) => {
