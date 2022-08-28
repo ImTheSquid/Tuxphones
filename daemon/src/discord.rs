@@ -350,7 +350,7 @@ pub mod websocket {
                 rtc_connection_id,
                 codecs: vec![
                     GatewayCodec {
-                        name: "VP9".to_string(),
+                        name: "H264".to_string(),
                         codec_type: PayloadType::Video,
                         priority: 1000,
                         payload_type: web_rtc_data.video_payload_type,

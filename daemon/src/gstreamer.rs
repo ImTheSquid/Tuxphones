@@ -170,7 +170,7 @@ impl GstHandle {
                     nvh264enc
                 } else {
                     let x264enc = gst::ElementFactory::make("x264enc", None)?;
-                    x264enc.set_property("threads", 12i32);
+                    x264enc.set_property("threads", 12u32);
                     x264enc.set_property_from_str("tune", "zerolatency");
                     x264enc.set_property_from_str("speed-preset", "ultrafast");
                     x264enc.set_property("key-int-max", 2560u32);

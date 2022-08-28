@@ -131,7 +131,7 @@ impl CommandProcessor {
                                 }
 
                                 let gst = GstHandle::new(
-                                    VideoEncoderType::VP9,
+                                    VideoEncoderType::H264(H264Settings{nvidia_encoder: false}),
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
