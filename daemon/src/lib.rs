@@ -13,7 +13,7 @@ use u32 as pid;
 use u32 as xid;
 
 use crate::{discord::websocket::{ToGst, WebsocketConnection}, x::XResizeWatcher};
-use crate::gstreamer::{GstHandle, ToWs, VideoEncoderType};
+use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 use tokio::{sync::mpsc::{self, Receiver, Sender, channel}, time::sleep};
 
@@ -121,9 +121,9 @@ impl CommandProcessor {
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 // TODO: Find a better way to do this
-                                // let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
+                                //let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
                                 //     String::from_utf8_lossy(&out.stdout).contains("nvidia")
-                                // } else { false };
+                                //} else { false };
 
                                 if !gst_is_loaded {
                                     gst_is_loaded = true;

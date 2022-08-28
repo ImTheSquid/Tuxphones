@@ -163,16 +163,47 @@ impl GstHandle {
             VideoEncoderType::H264(settings) => {
                 //Use nvidia encoder based on settings
                 if settings.nvidia_encoder {
-                    gst::ElementFactory::make("nvh264enc", None)?
+                    let nvh264enc = gst::ElementFactory::make("nvh264enc", None)?;
+                    nvh264enc.set_property("gop-size", 2560i32);
+                    nvh264enc.set_property_from_str("rc-mode", "cbr-ld-hq");
+                    nvh264enc.set_property("zerolatency", true);
+                    nvh264enc
                 } else {
-                    gst::ElementFactory::make("x264enc", None)?
+                    let x264enc = gst::ElementFactory::make("x264enc", None)?;
+                    x264enc.set_property("threads", 12i32);
+                    x264enc.set_property_from_str("tune", "zerolatency");
+                    x264enc.set_property_from_str("speed-preset", "ultrafast");
+                    x264enc.set_property("key-int-max", 2560u32);
+                    x264enc.set_property("b-adapt", false);
+                    x264enc.set_property("vbv-buf-capacity", 120u32);
+                    x264enc
                 }
             }
             VideoEncoderType::VP8 => {
-                gst::ElementFactory::make("vp8enc", None)?
+                let vp8enc = gst::ElementFactory::make("vp8enc", None)?;
+                vp8enc.set_property("threads", 12i32);
+                vp8enc.set_property("cpu-used", -16i32);
+                vp8enc.set_property_from_str("end-usage", "cbr");
+                vp8enc.set_property("buffer-initial-size", 100i32);
+                vp8enc.set_property("buffer-optimal-size", 120i32);
+                vp8enc.set_property("buffer-size", 150i32);
+                vp8enc.set_property("max-intra-bitrate", 250i32);
+                vp8enc.set_property_from_str("error-resilient", "default");
+                vp8enc.set_property("lag-in-frames", 0i32);
+                vp8enc
             }
             VideoEncoderType::VP9 => {
-                gst::ElementFactory::make("vp9enc", None)?
+                let vp9enc = gst::ElementFactory::make("vp9enc", None)?;
+                vp9enc.set_property("threads", 12i32);
+                vp9enc.set_property("cpu-used", -16i32);
+                vp9enc.set_property_from_str("end-usage", "cbr");
+                vp9enc.set_property("buffer-initial-size", 100i32);
+                vp9enc.set_property("buffer-optimal-size", 120i32);
+                vp9enc.set_property("buffer-size", 150i32);
+                vp9enc.set_property("max-intra-bitrate", 250i32);
+                vp9enc.set_property_from_str("error-resilient", "default");
+                vp9enc.set_property("lag-in-frames", 0i32);
+                vp9enc
             }
         };
 
