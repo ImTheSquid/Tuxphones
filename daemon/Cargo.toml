@@ -29,7 +29,7 @@ lazy_static = "1.4.0"
 rand = "0.8.5"
 image = "0.24.3"
 base64 = "0.13.0"
-gst-plugin-webrtcredux = { git="https://github.com/ImTheSquid/gst-webrtcredux", branch = "bin" }
+gst-plugin-webrtcredux = { git="https://github.com/ImTheSquid/gst-webrtcredux" }
 tokio = "1.20.1"
 tokio-native-tls = "0.3.0"
 tracing-log = "0.1.3"
