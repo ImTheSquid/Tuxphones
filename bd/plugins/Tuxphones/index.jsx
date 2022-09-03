@@ -7,9 +7,12 @@ const { Dispatcher } = DiscordModules;
 const React = BdApi.React;
 
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
-const AuthenticationStore = BdApi.findModule(m => m.default.getToken).default;
-const RTCConnectionStore = BdApi.findModule(m => m.default.getRTCConnectionId && m.default._changeCallbacks.size).default;
-const UserStatusStore = BdApi.findModule(m => m.default.getVoiceChannelId).default;
+const AuthenticationStore = BdApi.findModule((m => m.default?.getToken)).default;
+const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
+const UserStatusStore = BdApi.findModule((m => m.default?.getVoiceChannelId)).default;
+const WebRequests = BdApi.findModule(m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete).default;
+const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
+const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
 const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
 const Button = BdApi.findModuleByProps("BorderColors");
 
@@ -61,10 +64,10 @@ export default class extends BasePlugin {
         this.interceptNextStreamServerUpdate = false;
         this.currentSoundProfile = null;
         this.selectedFPS = null;
-        this.selectedResoultion = null;
+        this.selectedResolution = null;
         this.serverId = null;
         this.webSocketControlObj = null;
-
+        this.ip = null;
 
         Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that, _, __) => {
             this.webSocketControlObj = that;
@@ -73,7 +76,7 @@ export default class extends BasePlugin {
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
                 let res = null;
-                switch (this.selectedResoultion) {
+                switch (this.selectedResolution) {
                     case 720: res = {
                         width: 1280,
                         height: 720,
@@ -93,10 +96,31 @@ export default class extends BasePlugin {
                     };
                         break;
                 }
-                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
-                return;
+
+                this.streamKey = arg.streamKey;
+                this.webSocketControlObj.streamSetPaused(this.streamKey, false);
+
+                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
+                return new Promise(res => res());
+            } else if (this.currentSoundProfile) {
+                // Hide the stream's existence from Discord until ready to test Tuxphones/Discord interaction
+                switch (arg.type) {
+                    case 'STREAM_CREATE':
+                        this.serverId = arg.rtcServerId;
+                        return new Promise(res => res());
+                    case 'STREAM_UPDATE':
+                        // this.streamKey = arg.streamKey;
+                        return new Promise(res => res());
+                    case 'VOICE_STATE_UPDATES':
+                        arg.voiceStates[0].selfStream = false;
+                        break;
+                }
+            } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
+                Logger.log(arg)
+            }else {
+                // Logger.log(arg)
             }
-            original(arg);
+            return original(arg);
         });
 
         ContextMenu.getDiscordMenu('GoLiveModal').then(m => {
@@ -111,8 +135,8 @@ export default class extends BasePlugin {
                                 const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
                                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                                 this.selectedFPS = streamInfo.selectedFPS;
-                                this.selectedResoultion = streamInfo.selectedResoultion;
-                                this.serverId = streamInfo.guildId;
+                                this.selectedResolution = streamInfo.selectedResolution;
+                                // this.serverId = streamInfo.guildId;
                                 this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
                             },
                             size: Button.Sizes.SMALL
@@ -168,6 +192,13 @@ export default class extends BasePlugin {
                 }));
             });
         });
+
+        // Patch stream to get IP address
+        Patcher.before(RTCControlSocket.prototype, 'send', (_, [op, d]) => {
+            if (op === 1) {
+                this.ip = d.address;
+            }
+        })
     }
 
     createStream(guild_id, channel_id) {
@@ -185,9 +216,18 @@ export default class extends BasePlugin {
         Logger.log(obj)
         switch (obj.type) {
             case 'ApplicationList':
-                Dispatcher.dirtyDispatch({
+                Dispatcher.dispatch({
                     type: 'TUX_APPS',
                     apps: obj.apps
+                });
+                break;
+            case 'StreamPreview':
+                // Alternatively, DiscordNative.http.makeChunkedRequest
+                ChunkedRequests.makeChunkedRequest(`/streams/${this.streamKey}/preview`, {
+                    thumbnail: `data:image/jpeg;base64,${obj.jpg}` // May have to include charset?
+                }, {
+                    method: 'POST',
+                    token: AuthenticationStore.getToken()
                 });
                 break;
             default:
@@ -195,8 +235,13 @@ export default class extends BasePlugin {
         }
     }
 
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
-        this.unixClient = createConnection(this.sockPath, () => {
+    // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
+    // Guild ID will always exist, so get RTC Server ID
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
+        this.unixClient = createConnection(this.sockPath, async () => {
+            const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
+            const authData = servers.find(server => server.credential);
+
             this.unixClient.write(JSON.stringify({
                 type: 'StartStream',
                 pid: pid,
@@ -206,9 +251,17 @@ export default class extends BasePlugin {
                 server_id: server_id,
                 user_id: AuthenticationStore.getId(),
                 token: token,
-                session_id: AuthenticationStore.getSessionId(),
+                session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
                 rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-                endpoint: endpoint
+                endpoint: endpoint,
+                ip: ip,
+                ice: {
+                    type: "IceData",
+                    urls: servers.map(server => server.url),
+                    username: authData.username,
+                    credential: authData.credential,
+                    ttl,
+                }
             }));
             this.unixClient.destroy();
         });
@@ -233,7 +286,7 @@ export default class extends BasePlugin {
         });
         this.unixClient.on('error', e => {
             Logger.err(`[GetInfo] Socket client error: ${e}`);
-            Dispatcher.dirtyDispatch({
+            Dispatcher.dispatch({
                 type: 'TUX_APPS',
                 apps: []
             });

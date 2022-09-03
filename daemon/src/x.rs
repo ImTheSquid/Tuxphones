@@ -1,5 +1,11 @@
+use std::{time::Duration, sync::{atomic::{AtomicBool, Ordering}, Arc}, io::Cursor};
+
+// use async_std::{channel::Sender, task};
+use image::ImageBuffer;
 use sysinfo::{SystemExt, ProcessExt, PidExt};
-use xcb::res::{QueryClientIds, ClientIdSpec, ClientIdMask};
+use tokio::{sync::mpsc::Sender, task::{JoinHandle, self}, time::sleep, runtime::Handle};
+use tracing::error;
+use xcb::{res::{QueryClientIds, ClientIdSpec, ClientIdMask}, x::{Event::{ConfigureNotify, PropertyNotify}, self, ChangeWindowAttributes, Cw, EventMask, GetProperty, GetImage, GetGeometry}, Xid};
 use crate::{pid, xid};
 
 pub struct XServerHandle {
@@ -25,7 +31,7 @@ impl XServerHandle {
     }
 
     /// Attempts to derive a PID from an XID
-    pub fn pid_from_xid(self: &Self, xid: xid) -> Result<Option<pid>, xcb::Error> {
+    pub fn pid_from_xid(&self, xid: xid) -> Result<Option<pid>, xcb::Error> {
         // Create request
         let cookie = self.connection.send_request(&QueryClientIds {
             specs: &[ClientIdSpec {
@@ -37,7 +43,7 @@ impl XServerHandle {
         let reply = self.connection.wait_for_reply(cookie)?;
 
         if let Some(val) = reply.ids().next() {
-            return Ok(if val.value().len() > 0 && !self.xorg_procs.iter().any(|v| *v == val.value()[0]) {
+            return Ok(if !val.value().is_empty() && !self.xorg_procs.iter().any(|v| *v == val.value()[0]) {
                 Some(val.value()[0])
             } else {
                 None
@@ -46,4 +52,165 @@ impl XServerHandle {
 
         Ok(None)
     }
+
+    pub fn take_screenshot(&self, xid: xid) -> Result<Vec<u8>, xcb::Error> {
+        let size = window_size(&self.connection, xid)?;
+
+        let cookie = self.connection.send_request(&GetImage {
+            format: x::ImageFormat::ZPixmap, // jpg
+            drawable: xcb::x::Drawable::Window(unsafe { xcb::XidNew::new(xid) }),
+            x: 0,
+            y: 0,
+            width: size.width,
+            height: size.height,
+            plane_mask: u32::MAX,
+        });
+
+        let reply = self.connection.wait_for_reply(cookie)?;
+
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+        let mut image: ImageBuffer<image::Rgba<u8>, _> = image::ImageBuffer::from_raw(size.width.into(), size.height.into(), reply.data().to_owned()).unwrap();
+        // Convert BGRA to RGBA
+        for pixel in image.pixels_mut() {
+            pixel.0 = [pixel.0[2], pixel.0[1], pixel.0[0], pixel.0[3]];
+        }
+
+        let (width, height) = calculate_aspect_ratio_fit(image.width(), image.height(), 512, 512);
+
+        // Resize image to reasonable thumbnail size
+        let image = image::imageops::resize(&image, width, height, image::imageops::FilterType::Triangle);
+        image.write_to(&mut buf, image::ImageFormat::Jpeg).unwrap();
+        
+        Ok(buf.into_inner())
+    }
+}
+
+fn calculate_aspect_ratio_fit(src_width: u32, src_height: u32, max_width: u32, max_height: u32) -> (u32, u32) {
+    let ratio = f64::min(max_width as f64 / src_width as f64,max_height as f64 / src_height as f64);
+
+    ((src_width as f64 * ratio).round() as u32, (src_height as f64 * ratio).round() as u32)
+}
+
+pub struct XResizeWatcher {
+    run: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+    pub initial_size: Size
+}
+
+pub enum XResizeEvent {
+    Show,
+    Hide,
+    Size(Size)
+}
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct Size {
+    pub width: u16,
+    pub height: u16
+}
+
+impl Drop for XResizeWatcher {
+    fn drop(&mut self) {
+        self.run.store(false, Ordering::SeqCst);
+        self.thread.take().unwrap().abort();
+    }
+}
+
+impl XResizeWatcher {
+    pub fn new(xid: xid, on_event: Sender<XResizeEvent>, sleep_time: Duration) -> Result<Self, xcb::Error> {
+        let run = Arc::new(AtomicBool::new(true));
+        let r = run.clone();
+
+        // Connect to the server
+        let initial_size = {
+            let (connection, _) = xcb::Connection::connect(None)?;
+
+            let window = unsafe { xcb::XidNew::new(xid) };
+            
+            // Subscribe to events
+            connection.send_request(&ChangeWindowAttributes {
+                window,
+                value_list: &[Cw::EventMask(EventMask::STRUCTURE_NOTIFY | EventMask::PROPERTY_CHANGE)]
+            });
+
+            window_size(&connection, xid)
+        }?;
+
+        let thread = task::spawn(async move {
+            let (connection, _) = xcb::Connection::connect(None).unwrap();
+            let window = unsafe { xcb::XidNew::new(xid) };
+
+            let mut last_size: Option<Size> = None;
+            while r.load(Ordering::SeqCst) {
+                match connection.poll_for_event() {
+                    Ok(e) => if let Some(ev) = e {
+                        if let xcb::Event::X(e) = ev {
+                            match e {
+                                // Listen for size changes
+                                ConfigureNotify(e) => {
+                                    let size = Size { width: e.width().into(), height: e.height().into() };
+
+                                    // Don't send window relocation events (size stays the same)
+                                    if let Some(last_size) = last_size.as_ref() {
+                                        if *last_size == size {
+                                            continue;
+                                        }
+                                    } else {
+                                        let _ = last_size.insert(size);
+                                    }
+
+
+                                    if let Err(e) = Handle::current().block_on(on_event.send(XResizeEvent::Size(size))) {
+                                        error!("Failed to send resolution change info: {e}");
+                                    }
+                                },
+                                // Listen for show/hide
+                                PropertyNotify(e) => if e.atom().resource_id() == 321 {
+                                    let cookie = connection.send_request(&GetProperty {
+                                        delete: false,
+                                        window,
+                                        property: unsafe { xcb::XidNew::new(321) },
+                                        r#type: x::ATOM_ATOM,
+                                        long_offset: 0,
+                                        long_length: 4
+                                    });
+
+                                    match connection.wait_for_reply(cookie) {
+                                        Ok(res) => {
+                                            if let Err(e) = Handle::current().block_on(on_event.send(if res.value::<u32>().iter().any(|v| *v == 325) { // Hide
+                                                XResizeEvent::Hide
+                                            } else if res.value::<u32>().iter().any(|v| *v == 348) { // Show
+                                                XResizeEvent::Show
+                                            } else { continue; })) {
+                                                error!("Failed to send visibility change info: {e}");
+                                            }
+                                        }
+                                        Err(e) => error!("Failed to get window property: {e}")
+                                    }
+                                },
+                                _ => {}
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        error!("Failed to poll for X event: {e}");
+                    }
+                }
+                sleep(sleep_time).await;
+            }
+        });
+
+        Ok(XResizeWatcher { thread: Some(thread), run, initial_size })
+    }
+}
+
+fn window_size(conn: &xcb::Connection, xid: xid) -> Result<Size, xcb::Error> {
+    let cookie = conn.send_request(&GetGeometry {
+        drawable: x::Drawable::Window(unsafe { xcb::XidNew::new(xid) }),
+    });
+
+    let reply = conn.wait_for_reply(cookie)?;
+
+    Ok(Size { width: reply.width(), height: reply.height() })
 }

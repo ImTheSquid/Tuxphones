@@ -1,12 +1,13 @@
 pub mod receive {
-    use std::{thread, sync::{mpsc, Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
+    use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration, env, path::Path, os::unix::net::UnixListener, io::{self, Read}, fs};
     use serde::Deserialize;
-    use tracing::{error, info};
+    use tokio::{sync::mpsc, task::{self, JoinHandle}, time::sleep};
+    use tracing::{error, info, trace};
     use crate::{pid, xid};
 
     /// Listens on a socket for commands
     pub struct SocketListener {
-        thread: Option<thread::JoinHandle<()>>
+        thread: Option<JoinHandle<()>>
     }
 
     /// Possible errors when creating a `SocketListener`
@@ -14,24 +15,34 @@ pub mod receive {
     pub enum SocketListenerCreationError {
         /// The `HOME` environment variable is not defined.
         NoRuntimeDir,
-        /// An error occured while trying to create the socket.
+        /// An error occurred while trying to create the socket.
         UnableToCreateSocket,
-        /// An error occured while trying to set the socket to non-blocking.
+        /// An error occurred while trying to set the socket to non-blocking.
         UnableToSetNonBlocking
     }
 
     /// Holds information relating to stream resolution
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub struct StreamResolutionInformation {
-        pub width: u32,
-        pub height: u32,
+        pub width: u16,
+        pub height: u16,
         /// Whether or not the stream resolution can change
         pub is_fixed: bool
     }
 
+    /// Holds RTC ICE information
+    #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+    #[serde(tag = "type")]
+    pub struct IceData {
+        pub urls: Vec<String>,
+        pub username: String,
+        pub credential: String,
+        pub ttl: String
+    }
+
     /// Commands that can be received from the client plugin
-    #[derive(Deserialize, Debug)]
+    #[derive(Deserialize, Debug, PartialEq, Eq)]
     #[serde(tag = "type")]
     pub enum SocketListenerCommand {
         /// Starts a new soundshare stream
@@ -55,10 +66,16 @@ pub mod receive {
             /// RTC Connection ID
             rtc_connection_id: String,
             /// Target endpoint
-            endpoint: String
+            endpoint: String,
+            /// Current public IP
+            ip: String,
+            /// ICE Data
+            ice: Box<IceData>
         },
         /// Stops the currently-running stream
         StopStream,
+        /// Internal stop stream command, notifies client plugin
+        StopStreamInternal,
         /// Gets info on which windows can have sound captured
         GetInfo { 
             /// XIDs available to Discord
@@ -85,16 +102,13 @@ pub mod receive {
             };
 
             // Allows for constant event processing
-            match listener.set_nonblocking(true) {
-                Err(e) => {
-                    error!("Failed to set listener to non-blocking: {}", e);
-                    return Err(SocketListenerCreationError::UnableToSetNonBlocking);
-                }
-                Ok(()) => {}
+            if let Err(e) = listener.set_nonblocking(true) {
+                error!("Failed to set listener to non-blocking: {}", e);
+                return Err(SocketListenerCreationError::UnableToSetNonBlocking);
             }
 
             // Spawn listener thread to check for commands sent to the socket
-            let thread = thread::spawn(move || {
+            let thread = task::spawn(async move {
                 for stream in listener.incoming() {
                     match stream {
                         Ok(mut stream) => {
@@ -107,8 +121,10 @@ pub mod receive {
                                 }
                             }
 
+                            trace!("Received command: {}", buf);
+
                             match serde_json::from_str::<SocketListenerCommand>(&buf) {
-                                Ok(cmd) => match sender.send(cmd) {
+                                Ok(cmd) => match sender.send(cmd).await {
                                     Ok(_) => {},
                                     Err(e) => error!("Failed to send command: {}", e)
                                 },
@@ -123,7 +139,7 @@ pub mod receive {
                                 }
                                 break;
                             }
-                            thread::sleep(sleep_time);
+                            sleep(sleep_time).await;
                         }
                         Err(e) => error!("Failed to get stream: {}", e)
                     }
@@ -134,9 +150,9 @@ pub mod receive {
         }
 
         /// Waits for the `SocketListeners`'s internal thread to join.
-        pub fn join(&mut self) {
+        pub async fn join(&mut self) {
             if let Some(thread) = self.thread.take() {
-                thread.join().expect("Unable to join thread");
+                thread.await.expect("Unable to join thread");
             }
         }
     }
@@ -163,6 +179,17 @@ pub mod send {
         pub xid: xid
     }
 
+    #[derive(Serialize, Debug)]
+    #[serde(tag = "type")]
+    pub struct StreamStop {}
+
+    #[derive(Serialize, Debug)]
+    #[serde(tag = "type")]
+    pub struct StreamPreview {
+        jpg: String
+    }
+
+    #[derive(Debug)]
     pub enum SocketError {
         ConnectionFailed,
         NoRuntimeDir,
@@ -214,19 +241,25 @@ pub mod send {
                 Ok(_) => Ok(()),
                 Err(e) => {
                     error!("Write failed: {}", e);
-                    return Err(SocketError::WriteFailed);
+                    Err(SocketError::WriteFailed)
                 },
             },
             Err(e) => {
                 error!("Serialization failed: {}", e);
-                return Err(SocketError::SerializationFailed);
+                Err(SocketError::SerializationFailed)
             },
         }
     }
 
     pub fn application_info(apps: &Vec<Application>) -> Result<(), SocketError> {
-        write_socket(&ApplicationList { apps })?;
+        write_socket(&ApplicationList { apps })
+    }
 
-        Ok(())
+    pub fn stream_stop_internal() -> Result<(), SocketError> {
+        write_socket(&StreamStop {})
+    }
+
+    pub fn stream_preview(data: &Vec<u8>) -> Result<(), SocketError> {
+        write_socket(&StreamPreview { jpg: base64::encode(data) })
     }
 }
