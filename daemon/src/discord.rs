@@ -338,6 +338,22 @@ pub mod websocket {
         }
 
         #[tracing::instrument]
+        async fn send_speaking_message(
+            write: &mut WebSocketWrite,
+        ) -> Result<(), async_tungstenite::tungstenite::Error> {
+            let ws5 = OutgoingWebsocketMessage::OpCode5(OpCode5 {
+                ssrc: 0,
+                speaking: true,
+                delay: 5,
+            }).to_json();
+
+            trace!("[SPEAKING] {ws5}");
+
+            write.send(Message::Text(ws5)).await?;
+            Ok(())
+        }
+
+        #[tracing::instrument]
         async fn send_stream_information(
             write: &mut WebSocketWrite,
             web_rtc_data: ToWs,
@@ -379,6 +395,8 @@ pub mod websocket {
                 max_resolution,
                 max_framerate
             ).await?;
+
+            Self::send_speaking_message(write).await?;
 
             Ok(())
         }

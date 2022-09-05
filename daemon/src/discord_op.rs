@@ -1,6 +1,7 @@
 pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
+    use serde::{Serialize, Serializer};
     use serde_json::Value;
     use crate::{receive::StreamResolutionInformation};
 
@@ -21,6 +22,9 @@ pub mod opcodes {
         /// Heartbeat message
         #[serde(rename = "3")]
         OpCode3(OpCode3_6),
+        /// Speaking message
+        #[serde(rename = "5")]
+        OpCode5(OpCode5),
         /// Message containing info about the stream
         #[serde(rename = "12")]
         OpCode12(OpCode12)
@@ -177,6 +181,21 @@ pub mod opcodes {
         /// Remote sdp
         pub sdp: String,
         pub video_codec: String
+    }
+
+    #[derive(serde::Serialize, Debug)]
+    pub struct OpCode5 {
+        #[serde(serialize_with = "serialize_bool_to_u8")]
+        pub speaking: bool,
+        pub delay: u8,
+        pub ssrc: u32,
+    }
+
+    fn serialize_bool_to_u8<S>(x: &bool, s: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+    {
+        s.serialize_u8(*x as u8)
     }
 
     /// Initial heartbeat incoming configuration message

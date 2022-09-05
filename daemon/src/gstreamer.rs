@@ -221,9 +221,9 @@ impl GstHandle {
         ));
 
         //Create a new pulsesrc to get audio from the PulseAudio server
-        let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
+        let pulsesrc = gst::ElementFactory::make("audiotestsrc", None)?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
-        pulsesrc.set_property_from_str("device", "tuxphones.monitor");
+        //pulsesrc.set_property_from_str("device", "tuxphones.monitor");
 
         //Create a new audioconvert to allow encoding of the raw audio
         let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
