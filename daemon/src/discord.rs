@@ -366,19 +366,19 @@ pub mod websocket {
                 rtc_connection_id,
                 codecs: vec![
                     GatewayCodec {
-                        name: "H264".to_string(),
-                        codec_type: PayloadType::Video,
-                        priority: 1000,
-                        payload_type: web_rtc_data.video_payload_type,
-                        rtx_payload_type: Some(web_rtc_data.rtx_payload_type),
-                    },
-                    GatewayCodec {
                         name: "opus".to_string(),
                         codec_type: PayloadType::Audio,
                         priority: 1000,
                         payload_type: 111,
                         rtx_payload_type: None,
                     },
+                    GatewayCodec {
+                        name: "H264".to_string(),
+                        codec_type: PayloadType::Video,
+                        priority: 1000,
+                        payload_type: web_rtc_data.video_payload_type,
+                        rtx_payload_type: Some(web_rtc_data.rtx_payload_type),
+                    }
                 ],
                 data: web_rtc_data.local_sdp.clone(),
                 sdp: web_rtc_data.local_sdp,

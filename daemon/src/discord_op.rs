@@ -130,7 +130,6 @@ pub mod opcodes {
         pub codec_type: PayloadType,
         pub priority: u16,
         pub payload_type: u8,
-        #[serde(skip_serializing_if = "Option::is_none")]
         pub rtx_payload_type: Option<u8>
     }
 
