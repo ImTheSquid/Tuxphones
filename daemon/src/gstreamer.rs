@@ -229,6 +229,12 @@ impl GstHandle {
         let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
         //Encoder for the raw audio to opus
         let opusenc = gst::ElementFactory::make("opusenc", None)?;
+        opusenc.set_property("bitrate", 32000i32);
+        opusenc.set_property_from_str("bitrate-type", "cbr");
+        opusenc.set_property("dtx", true);
+        opusenc.set_property("inband-fec", true);
+
+
 
         //--DESTINATION--
 
