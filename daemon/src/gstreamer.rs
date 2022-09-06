@@ -6,7 +6,7 @@ use gst::prelude::*;
 use tokio::runtime::Handle;
 use tracing::{debug, error, info, trace};
 use webrtcredux::sdp::{SdpProp, MediaType, MediaProp, NetworkType, AddressType, LineEnding};
-use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState};
+use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState, RTCSdpSemantics, RTCBundlePolicy};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
 use crate::{receive::StreamResolutionInformation, ToGst, xid};
@@ -221,9 +221,9 @@ impl GstHandle {
         ));
 
         //Create a new pulsesrc to get audio from the PulseAudio server
-        let pulsesrc = gst::ElementFactory::make("audiotestsrc", None)?;
+        let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
-        //pulsesrc.set_property_from_str("device", "tuxphones.monitor");
+        pulsesrc.set_property_from_str("device", "tuxphones.monitor");
 
         //Create a new audioconvert to allow encoding of the raw audio
         let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
@@ -234,6 +234,8 @@ impl GstHandle {
 
         let webrtcredux = Arc::new(AsyncMutex::new(WebRtcRedux::default()));
         webrtcredux.lock().await.set_tokio_runtime(Handle::current());
+        webrtcredux.lock().await.set_sdp_semantics(RTCSdpSemantics::UnifiedPlan);
+        webrtcredux.lock().await.set_bundle_policy(RTCBundlePolicy::MaxBundle);
 
         let servers = ice.urls.into_iter().map(|url| {
             if url.starts_with("turn") {
