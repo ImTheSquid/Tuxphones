@@ -555,7 +555,7 @@ impl GstHandle {
                             },
                             MediaProp::Attribute {
                                 key: "rtpmap".to_string(),
-                                value: Some("111 opus/90000".to_string())
+                                value: Some("111 opus/48000/2".to_string())
                             },
                             MediaProp::Attribute {
                                 key: "rtcp-fb".to_string(),
