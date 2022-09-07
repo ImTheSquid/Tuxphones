@@ -508,22 +508,9 @@ impl GstHandle {
                             }
                         }).collect::<Vec<_>>();
 
-                        video_vec_attrs.append(&mut [
-                            "2 http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time", 
-                            "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
-                            "14 urn:ietf:params:rtp-hdrext:toffset",
-                            "13 urn:3gpp:video-orientation",
-                            "5 http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"
-                        ].into_iter().map(|ext| {
-                            MediaProp::Attribute {
-                                key: "extmap".to_string(),
-                                value: Some(ext.to_string())
-                            }
-                        }).collect::<Vec<_>>());
-
                         video_vec_attrs.append(&mut vec![
-                            MediaProp::Attribute { 
-                                key: "fmtp".to_string(), 
+                            MediaProp::Attribute {
+                                key: "fmtp".to_string(),
                                 value: Some(format!("{} x-google-max-bitrate=2500;level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", video_payload_type))
                             },
                             MediaProp::Attribute {
@@ -557,17 +544,7 @@ impl GstHandle {
                             props: base_media_props.clone().into_iter().chain(video_vec_attrs.into_iter()).collect::<Vec<_>>()
                         };
 
-                        let mut audio_vec_attrs = [
-                            "1 urn:ietf:params:rtp-hdrext:ssrc-audio-level", 
-                            "3 http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01"
-                        ].into_iter().map(|ext| {
-                            MediaProp::Attribute {
-                                key: "extmap".to_string(),
-                                value: Some(ext.to_string())
-                            }
-                        }).collect::<Vec<_>>();
-
-                        audio_vec_attrs.append(&mut vec![
+                        let audio_vec_attrs = vec![
                             MediaProp::Attribute {
                                 key: "fmtp".to_string(),
                                 value: Some("111 minptime=10;useinbandfec=1;usedtx=1".to_string())
@@ -588,7 +565,7 @@ impl GstHandle {
                                 key: "mid".to_string(),
                                 value: Some(1.to_string())
                             }
-                        ]);
+                        ];
 
                         let audio_media = SdpProp::Media {
                             r#type: MediaType::Audio,
