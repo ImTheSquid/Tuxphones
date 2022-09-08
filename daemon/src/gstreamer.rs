@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
+use regex::Regex;
 use tokio::runtime::Handle;
 use tracing::{debug, error, info, trace};
 use webrtcredux::sdp::{SdpProp, MediaType, MediaProp, NetworkType, AddressType, LineEnding};
@@ -430,13 +431,15 @@ impl GstHandle {
                     }).unwrap()
                 } else { unreachable!() };
 
+                let sdp_truncate_rule = Regex::new(format!("^a=ice|a=extmap|opus|VP8|{} rtx", rtx_payload_type).as_str()).unwrap();
+
                 to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
                         audio: audio_ssrc,
                         video: video_ssrc,
                         rtx: 0
                     },
-                    local_sdp: local.to_string(LineEnding::LF),
+                    local_sdp: local.to_string(LineEnding::LF).split('\n').filter(|s| sdp_truncate_rule.is_match(s)).collect::<Vec<&str>>().join("\n"),
                     video_payload_type,
                     rtx_payload_type,
                 }).await.unwrap();
