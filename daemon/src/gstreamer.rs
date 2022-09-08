@@ -595,8 +595,8 @@ impl GstHandle {
                                 key: "group".to_string(),
                                 value: Some("BUNDLE 0 1".to_string())
                             },
-                            video_media,
-                            audio_media
+                            audio_media,
+                            video_media
                         ]};
 
                         trace!("[WebRTC] Generated remote SDP: {:#?}", answer);
