@@ -494,10 +494,6 @@ impl GstHandle {
                             MediaProp::Attribute {
                                 key: "setup".to_string(),
                                 value: Some("passive".to_string())
-                            },
-                            MediaProp::Attribute {
-                                key: "inactive".to_string(),
-                                value: None
                             }
                         ];
 
@@ -519,7 +515,7 @@ impl GstHandle {
                             },
                             MediaProp::Attribute {
                                 key: "mid".to_string(),
-                                value: Some(0.to_string())
+                                value: Some(1.to_string())
                             },
                             MediaProp::Attribute {
                                 key: "rtpmap".to_string(),
@@ -563,7 +559,7 @@ impl GstHandle {
                             },
                             MediaProp::Attribute {
                                 key: "mid".to_string(),
-                                value: Some(1.to_string())
+                                value: Some(0.to_string())
                             }
                         ];
 
