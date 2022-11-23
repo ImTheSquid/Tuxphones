@@ -14,7 +14,7 @@ Development is ongoing and therefore some features do not work fully or are brok
 - All GStreamer Dev Libraries
 
 ### Tuxphones is still in-development. Follow these temporary instructions to try it:
-Clone the repo, then copy the plugin file from `bd/builds` to your BD plugins folder. Then run `cargo run` from the `daemon` directory. Finally, enable the BD plugin.
+Clone the repo, then copy the plugin file from `bd/release` to your BD plugins folder. Then run `cargo run` from the `daemon` directory. Finally, enable the BD plugin.
 
 ### The below instructions do not work yet!
 ### Manual
