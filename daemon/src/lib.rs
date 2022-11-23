@@ -1,11 +1,10 @@
 use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, self}};
-use std::process::Command;
 
 use sysinfo::{Pid, PidExt, Process, ProcessExt, SystemExt};
 use tracing::{error, info};
 
 use pulse::PulseHandle;
-use socket::{receive::SocketListenerCommand, send::Application};
+use socket::{SocketListenerCommand, Application, WebSocket};
 pub use socket::receive;
 use x::XServerHandle;
 // Makes sure typing is preserved
@@ -15,11 +14,11 @@ use u32 as xid;
 use crate::{discord::websocket::{ToGst, WebsocketConnection}, x::XResizeWatcher};
 use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
-use tokio::{sync::mpsc::{self, Receiver, Sender, channel}, time::sleep};
+use tokio::{sync::{mpsc::{self, Receiver, Sender, channel}, Mutex}, time::sleep};
 
 mod pulse;
 mod gstreamer;
-mod socket;
+pub mod socket;
 mod x;
 mod discord;
 mod discord_op;
@@ -29,7 +28,7 @@ pub struct CommandProcessor {
 }
 
 impl CommandProcessor {
-    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration) -> Self {
+    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration, websocket: Arc<Mutex<WebSocket>>) -> Self {
         let thread = tokio::spawn(async move {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
@@ -180,7 +179,7 @@ impl CommandProcessor {
 
                                 // If stream was stopped internally, send a notification to the client
                                 if cmd == SocketListenerCommand::StopStreamInternal {
-                                    if let Err(e) = socket::send::stream_stop_internal() {
+                                    if let Err(e) = websocket.lock().await.stream_stop_internal().await {
                                         error!("Failed to notify client of internal stream stop: {:?}", e);
                                     }
                                 }
@@ -242,7 +241,7 @@ impl CommandProcessor {
                                     }
                                 }
 
-                                match socket::send::application_info(&found_applications) {
+                                match websocket.lock().await.application_info(&found_applications).await {
                                     Ok(_) => info!("[GetInfo] Command processed (applications found: {})", found_applications.len()),
                                     Err(e) => error!("Failed to send application data: {}", e)
                                 }
@@ -270,7 +269,7 @@ impl CommandProcessor {
                             if send_preview {
                                 let _ = last_stream_preview.insert(time::Instant::now());
                                 info!("Sending stream preview");
-                                if let Err(e) = socket::send::stream_preview(&x.take_screenshot(current_xid.unwrap()).unwrap()) {
+                                if let Err(e) = websocket.lock().await.stream_preview(&x.take_screenshot(current_xid.unwrap()).unwrap()).await {
                                     error!("Failed to send stream preview: {}", e);
                                 }
                             }

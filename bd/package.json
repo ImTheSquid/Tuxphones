@@ -4,11 +4,18 @@
   "description": "Discord soundshare for Linux",
   "main": "index.jsx",
   "scripts": {
-    "build": "./build.sh"
+    "build": "esbuild src/Tuxphones/index.jsx --bundle --outfile=src/Tuxphones/bundled.js --platform=node && zpl build Tuxphones",
+    "init": "zpl init"
   },
   "author": "Jack Hogan",
   "license": "MIT",
   "dependencies": {
-    "bdbuilder": "^1.2.6-preview.4"
+    "zerespluginlibrary": "^2.0.6"
+  },
+  "zplConfig": {
+    "base": "./src",
+    "out": "./release",
+    "copyToBD": true,
+    "addInstallScript": true
   }
 }

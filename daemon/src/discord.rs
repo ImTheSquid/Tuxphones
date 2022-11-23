@@ -25,7 +25,7 @@ pub mod websocket {
 
     use crate::discord_op::opcodes::*;
     use crate::gstreamer::{StreamSSRCs, ToWs};
-    use crate::receive::{SocketListenerCommand, StreamResolutionInformation};
+    use crate::socket::{SocketListenerCommand, StreamResolutionInformation};
 
     const API_VERSION: u8 = 7;
     const MAX_BITRATE: u32 = 1_000_000;
@@ -118,7 +118,7 @@ pub mod websocket {
                     // let ip = ip.clone();
 
                     async move {
-                        let mut msg = match msg {
+                        let msg = match msg {
                             Ok(ws_msg) => {
                                 // Handle close codes
                                 if ws_msg.is_close() {
@@ -145,7 +145,7 @@ pub mod websocket {
                         };
 
                         //Quick way to patch the opcode to be a string waiting https://github.com/serde-rs/serde/pull/2056 to be merged
-                        msg = OPCODE_REGEX.replace(&msg, "\"op\":\"$op\"").to_string();
+                        let msg = OPCODE_REGEX.replace(&msg, "\"op\":\"$op\"").to_string();
 
                         let msg: IncomingWebsocketMessage = match serde_json::from_str(&msg) {
                             Ok(msg) => msg,

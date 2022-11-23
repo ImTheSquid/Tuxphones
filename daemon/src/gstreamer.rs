@@ -10,8 +10,7 @@ use webrtcredux::sdp::{SdpProp, MediaType, MediaProp, NetworkType, AddressType, 
 use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState, RTCSdpSemantics, RTCBundlePolicy};
 use tokio::sync::{Mutex as AsyncMutex, mpsc};
 
-use crate::{receive::StreamResolutionInformation, ToGst, xid};
-use crate::receive::IceData;
+use crate::{socket::{StreamResolutionInformation, IceData}, ToGst, xid};
 
 use webrtcredux::webrtcredux::{
     sdp::{SDP},

@@ -12,10 +12,5 @@
         "github": "https://github.com/ImTheSquid/Tuxphones",
         "github_raw": "https://raw.githubusercontent.com/ImTheSquid/Tuxphones/main/plugin/Tuxphones.plugin.js"
     },
-    "build": {
-        "copy": true,
-        "zlibrary": true,
-        "production": false,
-        "alias": {}
-    }
+    "main": "bundled.js"
 }

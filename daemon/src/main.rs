@@ -3,7 +3,8 @@ use tokio::{signal::{ctrl_c, unix::SignalKind}, sync::mpsc};
 use tracing::{error, info, Level};
 use tracing_log::LogTracer;
 use tracing_subscriber::FmtSubscriber;
-use tuxphones::{receive::SocketListener, CommandProcessor};
+use tuxphones::{socket::WebSocket, CommandProcessor};
+use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
@@ -80,15 +81,15 @@ async fn main() {
 
     let (sender, receiver) = mpsc::channel(1000);
 
-    let mut socket_watcher = match SocketListener::new(sender.clone(), Arc::clone(&run), Duration::from_millis(500)) {
-        Ok(s) => s,
+    let socket_watcher: Arc<Mutex<WebSocket>> = match WebSocket::new(9000, sender.clone()).await {
+        Ok(s) => Arc::new(Mutex::new(s)),
         Err(_) => {
             error!("Error creating socket watcher!");
             process::exit(2);
         }
     };
 
-    let mut command_processor = CommandProcessor::new(receiver, sender.clone(), Arc::clone(&run), Duration::from_millis(500));
+    let mut command_processor = CommandProcessor::new(receiver, sender.clone(), Arc::clone(&run), Duration::from_millis(500), socket_watcher.clone());
 
     info!("Daemon started");
 
@@ -101,6 +102,6 @@ async fn main() {
 
     r.store(false, Ordering::SeqCst);
 
-    socket_watcher.join().await;
+    socket_watcher.lock().await.abort().await;
     command_processor.join().await;
 }

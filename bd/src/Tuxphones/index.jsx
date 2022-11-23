@@ -1,30 +1,39 @@
-import { unlinkSync, existsSync } from 'fs';
-import { createServer, createConnection } from 'net';
-import { join } from 'path';
-
-const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = PluginApi;
-const { Dispatcher } = DiscordModules;
+module.exports = (Plugin, Library) => {
+const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = Library;
+const { Dispatcher, SelectedChannelStore } = DiscordModules;
 const React = BdApi.React;
 
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
-const AuthenticationStore = BdApi.findModule((m => m.default?.getToken)).default;
-const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
-const UserStatusStore = BdApi.findModule((m => m.default?.getVoiceChannelId)).default;
-const WebRequests = BdApi.findModule(m => m.default.get && m.default.post && m.default.put && m.default.patch && m.default.delete).default;
-const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
-const RTCControlSocket = BdApi.findModuleByPrototypes("handleHello");
-const WebSocketControl = BdApi.findModuleByPrototypes("streamCreate");
-const Button = BdApi.findModuleByProps("BorderColors");
+const AuthenticationStore = Object.values(ZLibrary.WebpackModules.getAllModules()).find(m => m.exports?.default?.getToken).exports.default; // Works (should be replaced with custom solution eventually)
+const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected")); // Works
+const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR")); // Works
+const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest"); // Works
+const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect); // In progress
+const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket(); // Works
+const Button = BdApi.findModuleByProps("BorderColors"); // ZLibrary.DiscordModules.ButtonData
 
-export default class extends BasePlugin {
+return class extends Plugin {
     onStart() {
-        // Make sure HOME is defined, Discord refuses to read files from XDG_RUNTIME_DIR
-        if (!process.env.HOME) {
-            BdApi.showToast('$HOME is not defined. Reload Discord after defining.', {type: 'error'});
-            throw '$HOME is not defined.';
+        this.webSocket = new WebSocket("ws://127.0.0.1:9000");
+        this.webSocket.onmessage = this.parseData;
+        this.webSocket.onerror = _ => {
+            BdApi.showConfirmationModal('Tuxphones Daemon Error', [
+                'The Tuxphones daemon was not detected.\n',
+                'If you don\'t know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:',
+                <a href='https://github.com/ImTheSquid/Tuxphones' target='_blank'>Tuxphones Github</a>,
+                ' \n',
+                'If you\'re sure you already installed the daemon, make sure it\'s running then click "Reload Discord".'
+            ], {
+                danger: true,
+                confirmText: 'Reload Discord',
+                cancelText: 'Stop Tuxphones',
+                onConfirm: () => {
+                    location.reload();
+                }
+            })
         }
 
-        this.sockPath = join(process.env.HOME, '.config', 'tuxphones.sock');
+        return;
         if (!existsSync(this.sockPath)) {
             BdApi.showConfirmationModal('Tuxphones Daemon Error', [
                 'The Tuxphones daemon was not detected.\n',
@@ -66,12 +75,7 @@ export default class extends BasePlugin {
         this.selectedFPS = null;
         this.selectedResolution = null;
         this.serverId = null;
-        this.webSocketControlObj = null;
         this.ip = null;
-
-        Patcher.before(WebSocketControl.prototype, "_handleDispatch", (that, _, __) => {
-            this.webSocketControlObj = that;
-        })
 
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
@@ -98,7 +102,7 @@ export default class extends BasePlugin {
                 }
 
                 this.streamKey = arg.streamKey;
-                this.webSocketControlObj.streamSetPaused(this.streamKey, false);
+                WebSocketControl.streamSetPaused(this.streamKey, false);
 
                 this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
                 return new Promise(res => res());
@@ -137,7 +141,7 @@ export default class extends BasePlugin {
                                 this.selectedFPS = streamInfo.selectedFPS;
                                 this.selectedResolution = streamInfo.selectedResolution;
                                 // this.serverId = streamInfo.guildId;
-                                this.createStream(streamInfo.guildId, UserStatusStore.getVoiceChannelId());
+                                this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
                             },
                             size: Button.Sizes.SMALL
                         }, "Go Live with Sound")}
@@ -194,16 +198,19 @@ export default class extends BasePlugin {
         });
 
         // Patch stream to get IP address
-        Patcher.before(RTCControlSocket.prototype, 'send', (_, [op, d]) => {
-            if (op === 1) {
-                this.ip = d.address;
-            }
-        })
+        Patcher.after(RTCControlSocket.Z.prototype, 'conenct', (that, _, __) => {
+            Logger.log(that)
+        });
+        // Patcher.before(RTCControlSocket.prototype, 'send', (_, [op, d]) => {
+        //     if (op === 1) {
+        //         this.ip = d.address;
+        //     }
+        // })
     }
 
     createStream(guild_id, channel_id) {
         this.interceptNextStreamServerUpdate = true;
-        this.webSocketControlObj.streamCreate(
+        WebSocketControl.streamCreate(
             guild_id === null ? 'call' : 'guild', // type
             guild_id, // guild_id
             channel_id, // channel or DM id
@@ -294,14 +301,7 @@ export default class extends BasePlugin {
     }
 
     onStop() {
-        if (this.unixServer && this.unixServer.listening) {
-            this.unixServer.close();
-        }
-
-        if (existsSync(this.serverSockPath)) {
-            unlinkSync(this.serverSockPath);
-        }
-
         Patcher.unpatchAll();
     }
+}
 }

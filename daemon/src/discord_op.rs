@@ -1,9 +1,9 @@
 pub mod opcodes {
     use lazy_static::lazy_static;
     use regex::Regex;
-    use serde::{Serialize, Serializer};
+    use serde::{Serializer};
     use serde_json::Value;
-    use crate::{receive::StreamResolutionInformation};
+    use crate::{socket::StreamResolutionInformation};
 
     lazy_static! {
         static ref OPCODE_OUTGOING_REGEX: Regex = Regex::new(r#""op":"(?P<op>\d+)""#).unwrap();
