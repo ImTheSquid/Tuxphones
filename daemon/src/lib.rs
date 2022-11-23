@@ -5,7 +5,6 @@ use tracing::{error, info};
 
 use pulse::PulseHandle;
 use socket::{SocketListenerCommand, Application, WebSocket};
-pub use socket::receive;
 use x::XServerHandle;
 // Makes sure typing is preserved
 use u32 as pid;
