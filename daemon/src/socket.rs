@@ -139,9 +139,22 @@ impl WebSocket {
     async fn send<T>(&self, data: &T) -> Result<(), Error> 
         where T: ?Sized + Serialize
     {
-        for stream in self.connections.lock().await.values_mut() {
-            stream.send(Message::Text(serde_json::to_string(data).unwrap())).await?;
+        let mut conn = self.connections.lock().await;
+        let mut to_remove = Vec::new();
+        for (addr, stream) in conn.iter_mut() {
+            match stream.send(Message::Text(serde_json::to_string(data).unwrap())).await {
+                Ok(()) => {},
+                Err(e) => match e {
+                    Error::ConnectionClosed => {to_remove.push(addr.clone());},
+                    _ => return Err(e)
+                }
+            }
         }
+
+        for rm in to_remove {
+            conn.remove(&rm);
+        }
+
         Ok(())
     }
 

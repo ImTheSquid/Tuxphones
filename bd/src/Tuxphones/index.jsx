@@ -1,16 +1,26 @@
 module.exports = (Plugin, Library) => {
 const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = Library;
-const { Dispatcher, SelectedChannelStore } = DiscordModules;
+const { Dispatcher, SelectedChannelStore, ButtonData } = DiscordModules;
 const React = BdApi.React;
 
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
 const AuthenticationStore = Object.values(ZLibrary.WebpackModules.getAllModules()).find(m => m.exports?.default?.getToken).exports.default; // Works (should be replaced with custom solution eventually)
-const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected")); // Works
-const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR")); // Works
-const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest"); // Works
-const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect); // In progress
-const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket(); // Works
-const Button = BdApi.findModuleByProps("BorderColors"); // ZLibrary.DiscordModules.ButtonData
+const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
+const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR"));
+const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
+const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect);
+const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
+const GoLiveModal = BdApi.Webpack.getModule(m => m.default?.toString().includes("GO_LIVE_MODAL"));
+const GetDesktopSourcesMod = BdApi.Webpack.getModule(m => Object.values(m).filter(v => v).some(v => v.SCREEN && v.WINDOW));
+
+function getFunctionNameFromString(obj, search) {
+    for (const [k, v] of Object.entries(obj)) {
+        if (search.every(str => v?.toString().match(str))) {
+            return k;
+        }
+    }
+    return null;
+}
 
 return class extends Plugin {
     onStart() {
@@ -32,42 +42,6 @@ return class extends Plugin {
                 }
             })
         }
-
-        return;
-        if (!existsSync(this.sockPath)) {
-            BdApi.showConfirmationModal('Tuxphones Daemon Error', [
-                'The Tuxphones daemon was not detected.\n',
-                'If you don\'t know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:',
-                <a href='https://github.com/ImTheSquid/Tuxphones' target='_blank'>Tuxphones Github</a>,
-                ' \n',
-                'If you\'re sure you already installed the daemon, make sure it\'s running then click "Reload Discord".'
-            ], {
-                danger: true,
-                confirmText: 'Reload Discord',
-                cancelText: 'Stop Tuxphones',
-                onConfirm: () => {
-                    location.reload();
-                }
-            })
-            throw 'Daemon not running!';
-        }
-
-        this.serverSockPath = join(process.env.HOME, '.config', 'tuxphonesjs.sock');
-
-        if (existsSync(this.serverSockPath)) {
-            unlinkSync(this.serverSockPath);
-        }
-
-        this.unixServer = createServer(sock => {
-            let data = [];
-            sock.on('data', d => data += d);
-            sock.on('end', () =>{
-                this.parseData(data);
-                data = [];
-            })
-        });
-
-        this.unixServer.listen(this.serverSockPath, () => Logger.log('Server bound'));
 
         // Hook Dispatcher for when to intercept
         this.interceptNextStreamServerUpdate = false;
@@ -127,85 +101,80 @@ return class extends Plugin {
             return original(arg);
         });
 
-        ContextMenu.getDiscordMenu('GoLiveModal').then(m => {
-            Patcher.after(m, 'default', (_, __, ret) => {
-                //Logger.log(arg)
-                Logger.log(ret)
+        let showTuxOk = false;
 
-                if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2 && ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+        Patcher.after(GoLiveModal, 'default', (_, __, ret) => {
+            Logger.log(ret)
+
+            if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
+                if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+                    showTuxOk = true;
                     ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
-                        {React.createElement(Button, {
+                        {React.createElement(ButtonData, {
                             onClick: () => {
                                 const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
                                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                                 this.selectedFPS = streamInfo.selectedFPS;
                                 this.selectedResolution = streamInfo.selectedResolution;
-                                // this.serverId = streamInfo.guildId;
                                 this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
                             },
-                            size: Button.Sizes.SMALL
+                            size: ButtonData.Sizes.SMALL
                         }, "Go Live with Sound")}
                     </div>
-                }
-            });
-        });
-
-        ContextMenu.getDiscordMenu('Confirm').then(m => {
-            Patcher.after(m, 'default', (_, [arg], ret) => {
-                if (!Array.isArray(ret.props.children)) return;
-                Logger.log(arg)
-                //Logger.log(ret)
-
-                if (arg.selectedSource.sound) {
-                    ret.props.children[1] = <p style={{color: 'green', padding: '0px 16px'}}>Tuxphones sound enabled!</p>
                 } else {
-                    ret.props.children[1] = <p style={{color: 'red', padding: '0px 16px'}}>Tuxphones not available.</p>
+                    showTuxOk = false;
                 }
-            });
+            }
         });
+
+        this.observer = new MutationObserver(mutations => {
+            if (mutations.filter(mut => mut.addedNodes.length === 0 && mut.target.hasChildNodes()).length == 0) return;
+
+            const res = mutations
+                .flatMap(mut => Array.from(mut.target.childNodes.values()))
+                .filter(node => node.childNodes.length === 1)
+                .flatMap(node => Array.from(node.childNodes.values()))
+                .filter(node => node.nodeName === "DIV" && Array.from(node.childNodes.values())
+                .some(node => node.matches("[class*=flex]")))[0];
+
+            if (res) {
+                res.querySelector("[class*=flex]").innerText = showTuxOk ? "Tuxphones sound enabled!" : "Tuxphones not available.";
+            }
+        });
+
+        this.observer.observe(document.querySelector("div > [class^=layerContainer]"), {childList: true, subtree: true});
 
         // Add extra info to desktop sources list
-        // Stolen from https://rauenzi.github.io/BDPluginLibrary/docs/ui_discordcontextmenu.js.html#line-269, removed code that limited to default
-        new Promise(resolve => {
-            const cancel = WebpackModules.addListener(module => {
-                if (!module.default || !module.DesktopSources) return;
-                resolve(module);
-                cancel();
-            })}).then(m => {
-            Patcher.after(m, 'default', (_, __, ret) => {
-                return ret.then(vals => new Promise(res => {
-                    const f = function dispatch(e) {
-                        Dispatcher.unsubscribe('TUX_APPS', dispatch);
+        Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
+            return ret.then(vals => new Promise(res => {
+                const f = function dispatch(e) {
+                    Dispatcher.unsubscribe('TUX_APPS', dispatch);
 
-                        // Check against window IDs to see if comaptible with sound
-                        Logger.log(vals);
-                        Logger.log(e.apps);
-                        res(vals.map(v => {
-                            let found = e.apps.find(el => el.xid == v.id.split(':')[1]);
-                            if (v.id.startsWith('window') && found) {
-                                v.sound = found;
-                            } else {
-                                v.sound = null;
-                            }
-                            return v;
-                        }));
-                    }
+                    // Check against window IDs to see if comaptible with sound
+                    Logger.log(vals);
+                    Logger.log(e.apps);
+                    res(vals.map(v => {
+                        let found = e.apps.find(el => el.xid == v.id.split(':')[1]);
+                        if (v.id.startsWith('window') && found) {
+                            v.sound = found;
+                        } else {
+                            v.sound = null;
+                        }
+                        return v;
+                    }));
+                }
 
-                    Dispatcher.subscribe('TUX_APPS', f);
-                    this.getInfo(vals.filter(v => v.id.startsWith('window')).map(v => parseInt(v.id.split(':')[1])));
-                }));
-            });
+                Dispatcher.subscribe('TUX_APPS', f);
+                this.getInfo(vals.filter(v => v.id.startsWith('window')).map(v => parseInt(v.id.split(':')[1])));
+            }));
         });
 
         // Patch stream to get IP address
-        Patcher.after(RTCControlSocket.Z.prototype, 'conenct', (that, _, __) => {
-            Logger.log(that)
+        Patcher.after(RTCControlSocket.Z.prototype, '_handleReady', (that, _, __) => {
+            that._connection.on("connected", (___, info) => {
+                this.ip = info.address;
+            });
         });
-        // Patcher.before(RTCControlSocket.prototype, 'send', (_, [op, d]) => {
-        //     if (op === 1) {
-        //         this.ip = d.address;
-        //     }
-        // })
     }
 
     createStream(guild_id, channel_id) {
@@ -218,8 +187,8 @@ return class extends Plugin {
         );
     }
 
-    parseData(data) {
-        let obj = JSON.parse(data);
+    parseData(msg) {
+        let obj = JSON.parse(msg.data);
         Logger.log(obj)
         switch (obj.type) {
             case 'ApplicationList':
@@ -244,64 +213,50 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-        this.unixClient = createConnection(this.sockPath, async () => {
-            const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
-            const authData = servers.find(server => server.credential);
+    async startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
+        const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
+        const authData = servers.find(server => server.credential);
 
-            this.unixClient.write(JSON.stringify({
-                type: 'StartStream',
-                pid: pid,
-                xid: xid,
-                resolution: resolution,
-                framerate: framerate,
-                server_id: server_id,
-                user_id: AuthenticationStore.getId(),
-                token: token,
-                session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
-                rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-                endpoint: endpoint,
-                ip: ip,
-                ice: {
-                    type: "IceData",
-                    urls: servers.map(server => server.url),
-                    username: authData.username,
-                    credential: authData.credential,
-                    ttl,
-                }
-            }));
-            this.unixClient.destroy();
-        });
+        this.webSocket.send(JSON.stringify({
+            type: 'StartStream',
+            pid: pid,
+            xid: xid,
+            resolution: resolution,
+            framerate: framerate,
+            server_id: server_id,
+            user_id: AuthenticationStore.getId(),
+            token: token,
+            session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
+            rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
+            endpoint: endpoint,
+            ip: ip,
+            ice: {
+                type: "IceData",
+                urls: servers.map(server => server.url),
+                username: authData.username,
+                credential: authData.credential,
+                ttl,
+            }
+        }));
     }
 
     endStream() {
-        this.unixClient = createConnection(this.sockPath, () => {
-            this.unixClient.write(JSON.stringify({
-                type: 'StopStream'
-            }));
-            this.unixClient.destroy();
-        });
+        this.webSocket.send(JSON.stringify({
+            type: 'StopStream'
+        }));
     }
 
     getInfo(xids) {
-        this.unixClient = createConnection(this.sockPath, () => {
-            this.unixClient.write(JSON.stringify({
-                type: 'GetInfo',
-                xids: xids
-            }));
-            this.unixClient.destroy();
-        });
-        this.unixClient.on('error', e => {
-            Logger.err(`[GetInfo] Socket client error: ${e}`);
-            Dispatcher.dispatch({
-                type: 'TUX_APPS',
-                apps: []
-            });
-        });
+        this.webSocket.send(JSON.stringify({
+            type: 'GetInfo',
+            xids: xids
+        }));
     }
 
     onStop() {
+        this.webSocket.close();
         Patcher.unpatchAll();
+        this.observer.disconnect();
     }
 }
 }
