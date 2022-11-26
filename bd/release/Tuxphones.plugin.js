@@ -119,12 +119,15 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
         });
       };
+      this.webSocket.onopen = (_) => this.onOpen();
       this.interceptNextStreamServerUpdate = false;
       this.currentSoundProfile = null;
       this.selectedFPS = null;
       this.selectedResolution = null;
       this.serverId = null;
       this.ip = null;
+    }
+    onOpen() {
       Patcher.instead(Dispatcher, "dispatch", (_, [arg], original) => {
         if (this.interceptNextStreamServerUpdate && arg.type === "STREAM_SERVER_UPDATE") {
           let res = null;
@@ -176,7 +179,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       Patcher.after(GoLiveModal, "default", (_, __, ret) => {
         Logger.log(ret);
         if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
-          if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+          if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
             showTuxOk = true;
             ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", {
               style: { "margin-right": "8px" }
@@ -195,24 +198,18 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
         }
       });
-      this.observer = new MutationObserver((mutations) => {
-        if (mutations.filter((mut) => mut.addedNodes.length === 0 && mut.target.hasChildNodes()).length == 0)
-          return;
-        const res = mutations.flatMap((mut) => Array.from(mut.target.childNodes.values())).filter((node) => node.childNodes.length === 1).flatMap((node) => Array.from(node.childNodes.values())).filter((node) => node.nodeName === "DIV" && Array.from(node.childNodes.values()).some((node2) => node2.matches("[class*=flex]")))[0];
-        if (res) {
-          res.querySelector("[class*=flex]").innerText = showTuxOk ? "Tuxphones sound enabled!" : "Tuxphones not available.";
-        }
-      });
-      this.observer.observe(document.querySelector("div > [class^=layerContainer]"), { childList: true, subtree: true });
       Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
         return ret.then((vals) => new Promise((res) => {
           const f = function dispatch(e) {
             Dispatcher.unsubscribe("TUX_APPS", dispatch);
+            Logger.log("Found Sources:");
             Logger.log(vals);
+            Logger.log("Found Sound Apps:");
             Logger.log(e.apps);
             res(vals.map((v) => {
-              let found = e.apps.find((el) => el.xid == v.id.split(":")[1]);
+              let found = e.apps.find((el) => el.xid === parseInt(v.id.split(":")[1]));
               if (v.id.startsWith("window") && found) {
+                Logger.log(`Associating ${v.id} with sound profile for ${found.name}`);
                 v.sound = found;
               } else {
                 v.sound = null;
@@ -226,6 +223,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       });
       Patcher.after(RTCControlSocket.Z.prototype, "_handleReady", (that, _, __) => {
         that._connection.on("connected", (___, info) => {
+          Logger.log(info);
           this.ip = info.address;
         });
       });
@@ -256,9 +254,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           Logger.err(`Received unknown command type: ${obj.type}`);
       }
     }
-    async startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-      const { servers, ttl } = (await WebRequests.get({ url: "/voice/ice" })).body;
-      const authData = servers.find((server) => server.credential);
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
       this.webSocket.send(JSON.stringify({
         type: "StartStream",
         pid,
@@ -274,10 +270,10 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         ip,
         ice: {
           type: "IceData",
-          urls: servers.map((server) => server.url),
-          username: authData.username,
-          credential: authData.credential,
-          ttl
+          urls: ["stun.l.google.com:19302"],
+          username: "",
+          credential: "",
+          ttl: ""
         }
       }));
     }
@@ -295,7 +291,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     onStop() {
       this.webSocket.close();
       Patcher.unpatchAll();
-      this.observer.disconnect();
     }
   };
 };

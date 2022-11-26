@@ -43,6 +43,8 @@ return class extends Plugin {
             })
         }
 
+        this.webSocket.onopen = _ => this.onOpen();
+
         // Hook Dispatcher for when to intercept
         this.interceptNextStreamServerUpdate = false;
         this.currentSoundProfile = null;
@@ -50,7 +52,9 @@ return class extends Plugin {
         this.selectedResolution = null;
         this.serverId = null;
         this.ip = null;
+    }
 
+    onOpen() {
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
                 let res = null;
@@ -107,7 +111,7 @@ return class extends Plugin {
             Logger.log(ret)
 
             if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
-                if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource?.sound) {
+                if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
                     showTuxOk = true;
                     ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
                         {React.createElement(ButtonData, {
@@ -127,23 +131,6 @@ return class extends Plugin {
             }
         });
 
-        this.observer = new MutationObserver(mutations => {
-            if (mutations.filter(mut => mut.addedNodes.length === 0 && mut.target.hasChildNodes()).length == 0) return;
-
-            const res = mutations
-                .flatMap(mut => Array.from(mut.target.childNodes.values()))
-                .filter(node => node.childNodes.length === 1)
-                .flatMap(node => Array.from(node.childNodes.values()))
-                .filter(node => node.nodeName === "DIV" && Array.from(node.childNodes.values())
-                .some(node => node.matches("[class*=flex]")))[0];
-
-            if (res) {
-                res.querySelector("[class*=flex]").innerText = showTuxOk ? "Tuxphones sound enabled!" : "Tuxphones not available.";
-            }
-        });
-
-        this.observer.observe(document.querySelector("div > [class^=layerContainer]"), {childList: true, subtree: true});
-
         // Add extra info to desktop sources list
         Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
             return ret.then(vals => new Promise(res => {
@@ -151,11 +138,14 @@ return class extends Plugin {
                     Dispatcher.unsubscribe('TUX_APPS', dispatch);
 
                     // Check against window IDs to see if comaptible with sound
+                    Logger.log("Found Sources:")
                     Logger.log(vals);
+                    Logger.log("Found Sound Apps:")
                     Logger.log(e.apps);
                     res(vals.map(v => {
-                        let found = e.apps.find(el => el.xid == v.id.split(':')[1]);
+                        let found = e.apps.find(el => el.xid === parseInt(v.id.split(':')[1]));
                         if (v.id.startsWith('window') && found) {
+                            Logger.log(`Associating ${v.id} with sound profile for ${found.name}`)
                             v.sound = found;
                         } else {
                             v.sound = null;
@@ -172,6 +162,7 @@ return class extends Plugin {
         // Patch stream to get IP address
         Patcher.after(RTCControlSocket.Z.prototype, '_handleReady', (that, _, __) => {
             that._connection.on("connected", (___, info) => {
+                Logger.log(info)
                 this.ip = info.address;
             });
         });
@@ -213,10 +204,7 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    async startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
-        const {servers, ttl} = (await WebRequests.get({url: '/voice/ice'})).body;
-        const authData = servers.find(server => server.credential);
-
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
         this.webSocket.send(JSON.stringify({
             type: 'StartStream',
             pid: pid,
@@ -232,10 +220,10 @@ return class extends Plugin {
             ip: ip,
             ice: {
                 type: "IceData",
-                urls: servers.map(server => server.url),
-                username: authData.username,
-                credential: authData.credential,
-                ttl,
+                urls: ['stun.l.google.com:19302'],
+                username: '',
+                credential: '',
+                ttl: '',
             }
         }));
     }
@@ -256,7 +244,6 @@ return class extends Plugin {
     onStop() {
         this.webSocket.close();
         Patcher.unpatchAll();
-        this.observer.disconnect();
     }
 }
 }
