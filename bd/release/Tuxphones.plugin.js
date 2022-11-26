@@ -130,6 +130,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     onOpen() {
       Patcher.instead(Dispatcher, "dispatch", (_, [arg], original) => {
         if (this.interceptNextStreamServerUpdate && arg.type === "STREAM_SERVER_UPDATE") {
+          Logger.log(arg);
           let res = null;
           switch (this.selectedResolution) {
             case 720:
@@ -156,6 +157,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
           this.streamKey = arg.streamKey;
           WebSocketControl.streamSetPaused(this.streamKey, false);
+          Logger.log(this.streamKey);
           this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
           return new Promise((res2) => res2());
         } else if (this.currentSoundProfile) {
@@ -175,29 +177,30 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         }
         return original(arg);
       });
-      let showTuxOk = false;
-      Patcher.after(GoLiveModal, "default", (_, __, ret) => {
-        Logger.log(ret);
-        if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
-          if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
-            showTuxOk = true;
-            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", {
-              style: { "margin-right": "8px" }
-            }, React.createElement(ButtonData, {
-              onClick: () => {
-                const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
-                this.currentSoundProfile = streamInfo.selectedSource.sound;
-                this.selectedFPS = streamInfo.selectedFPS;
-                this.selectedResolution = streamInfo.selectedResolution;
-                this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
-              },
-              size: ButtonData.Sizes.SMALL
-            }, "Go Live with Sound"));
-          } else {
-            showTuxOk = false;
-          }
+      this.showTuxOk = false;
+      if (GoLiveModal)
+        this.patchGoLive(GoLiveModal);
+      else {
+        new Promise((resolve) => {
+          const cancel = WebpackModules.addListener((module2) => {
+            if (!module2.default?.toString().includes("GO_LIVE_MODAL"))
+              return;
+            resolve(module2);
+            cancel();
+          });
+        }).then((m) => {
+          this.patchGoLive(m);
+        });
+      }
+      this.observer = new MutationObserver((mutations) => {
+        if (mutations.filter((mut) => mut.addedNodes.length === 0 && mut.target.hasChildNodes()).length == 0)
+          return;
+        const res = mutations.flatMap((mut) => Array.from(mut.target.childNodes.values())).filter((node) => node.childNodes.length === 1).flatMap((node) => Array.from(node.childNodes.values())).filter((node) => node.nodeName === "DIV" && Array.from(node.childNodes.values()).some((node2) => node2.matches && node2.matches("[class*=flex]")))[0];
+        if (res) {
+          res.querySelector("[class*=flex]").innerText = this.showTuxOk ? "Tuxphones sound enabled!" : "Tuxphones not available.";
         }
       });
+      this.observer.observe(document.querySelector("div > [class^=layerContainer]"), { childList: true, subtree: true });
       Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
         return ret.then((vals) => new Promise((res) => {
           const f = function dispatch(e) {
@@ -222,10 +225,35 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         }));
       });
       Patcher.after(RTCControlSocket.Z.prototype, "_handleReady", (that, _, __) => {
+        Logger.log("handling ready");
         that._connection.on("connected", (___, info) => {
           Logger.log(info);
           this.ip = info.address;
         });
+      });
+    }
+    patchGoLive(m) {
+      Patcher.after(m, "default", (_, __, ret) => {
+        Logger.log(ret);
+        if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
+          if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
+            this.showTuxOk = true;
+            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", {
+              style: { "margin-right": "8px" }
+            }, React.createElement(ButtonData, {
+              onClick: () => {
+                const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
+                this.currentSoundProfile = streamInfo.selectedSource.sound;
+                this.selectedFPS = streamInfo.selectedFPS;
+                this.selectedResolution = streamInfo.selectedResolution;
+                this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
+              },
+              size: ButtonData.Sizes.SMALL
+            }, "Go Live with Sound"));
+          } else {
+            this.showTuxOk = false;
+          }
+        }
       });
     }
     createStream(guild_id, channel_id) {
@@ -243,6 +271,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           });
           break;
         case "StreamPreview":
+          Logger.log(this.streamKey);
           ChunkedRequests.makeChunkedRequest(`/streams/${this.streamKey}/preview`, {
             thumbnail: `data:image/jpeg;base64,${obj.jpg}`
           }, {
@@ -270,10 +299,9 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         ip,
         ice: {
           type: "IceData",
-          urls: ["stun.l.google.com:19302"],
-          username: "",
-          credential: "",
-          ttl: ""
+          urls: ["stun:global.stun.twilio.com:3478?transport=udp", "turn:global.turn.twilio.com:3478?transport=tcp", "turn:global.turn.twilio.com:3478?transport=udp"],
+          username: "4aac1e53ade1a5473f8b5da67be3b591113cad11a9c75f957537026f628111fa",
+          credential: "dyH2YPGFDI8rgDcaAl73jJOR7ga/st4/YpNxsVJ498A="
         }
       }));
     }
@@ -291,6 +319,8 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     onStop() {
       this.webSocket.close();
       Patcher.unpatchAll();
+      if (this.observer)
+        this.observer.disconnect();
     }
   };
 };

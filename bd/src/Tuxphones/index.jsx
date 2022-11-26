@@ -57,6 +57,7 @@ return class extends Plugin {
     onOpen() {
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
+                Logger.log(arg)
                 let res = null;
                 switch (this.selectedResolution) {
                     case 720: res = {
@@ -81,6 +82,7 @@ return class extends Plugin {
 
                 this.streamKey = arg.streamKey;
                 WebSocketControl.streamSetPaused(this.streamKey, false);
+                Logger.log(this.streamKey)
 
                 this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
                 return new Promise(res => res());
@@ -105,31 +107,37 @@ return class extends Plugin {
             return original(arg);
         });
 
-        let showTuxOk = false;
+        this.showTuxOk = false;
 
-        Patcher.after(GoLiveModal, 'default', (_, __, ret) => {
-            Logger.log(ret)
+        if (GoLiveModal) this.patchGoLive(GoLiveModal)
+        else {
+            new Promise(resolve => {
+                const cancel = WebpackModules.addListener(module => {
+                    if (!module.default?.toString().includes("GO_LIVE_MODAL")) return;
+                    resolve(module);
+                    cancel();
+                });
+            }).then(m => {
+                this.patchGoLive(m);
+            });
+        }
 
-            if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
-                if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
-                    showTuxOk = true;
-                    ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
-                        {React.createElement(ButtonData, {
-                            onClick: () => {
-                                const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
-                                this.currentSoundProfile = streamInfo.selectedSource.sound;
-                                this.selectedFPS = streamInfo.selectedFPS;
-                                this.selectedResolution = streamInfo.selectedResolution;
-                                this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
-                            },
-                            size: ButtonData.Sizes.SMALL
-                        }, "Go Live with Sound")}
-                    </div>
-                } else {
-                    showTuxOk = false;
-                }
+        this.observer = new MutationObserver(mutations => {
+            if (mutations.filter(mut => mut.addedNodes.length === 0 && mut.target.hasChildNodes()).length == 0) return;
+
+            const res = mutations
+                .flatMap(mut => Array.from(mut.target.childNodes.values()))
+                .filter(node => node.childNodes.length === 1)
+                .flatMap(node => Array.from(node.childNodes.values()))
+                .filter(node => node.nodeName === "DIV" && Array.from(node.childNodes.values())
+                .some(node => node.matches && node.matches("[class*=flex]")))[0];
+
+            if (res) {
+                res.querySelector("[class*=flex]").innerText = this.showTuxOk ? "Tuxphones sound enabled!" : "Tuxphones not available.";
             }
         });
+
+        this.observer.observe(document.querySelector("div > [class^=layerContainer]"), {childList: true, subtree: true});
 
         // Add extra info to desktop sources list
         Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
@@ -161,10 +169,37 @@ return class extends Plugin {
 
         // Patch stream to get IP address
         Patcher.after(RTCControlSocket.Z.prototype, '_handleReady', (that, _, __) => {
+            Logger.log("handling ready")
             that._connection.on("connected", (___, info) => {
                 Logger.log(info)
                 this.ip = info.address;
             });
+        });
+    }
+
+    patchGoLive(m) {
+        Patcher.after(m, 'default', (_, __, ret) => {
+            Logger.log(ret)
+
+            if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
+                if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
+                    this.showTuxOk = true;
+                    ret.props.children.props.children[2].props.children[2].props.children[0] = <div style={{'margin-right': '8px'}}>
+                        {React.createElement(ButtonData, {
+                            onClick: () => {
+                                const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
+                                this.currentSoundProfile = streamInfo.selectedSource.sound;
+                                this.selectedFPS = streamInfo.selectedFPS;
+                                this.selectedResolution = streamInfo.selectedResolution;
+                                this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
+                            },
+                            size: ButtonData.Sizes.SMALL
+                        }, "Go Live with Sound")}
+                    </div>
+                } else {
+                    this.showTuxOk = false;
+                }
+            }
         });
     }
 
@@ -190,6 +225,7 @@ return class extends Plugin {
                 break;
             case 'StreamPreview':
                 // Alternatively, DiscordNative.http.makeChunkedRequest
+                Logger.log(this.streamKey)
                 ChunkedRequests.makeChunkedRequest(`/streams/${this.streamKey}/preview`, {
                     thumbnail: `data:image/jpeg;base64,${obj.jpg}` // May have to include charset?
                 }, {
@@ -220,10 +256,9 @@ return class extends Plugin {
             ip: ip,
             ice: {
                 type: "IceData",
-                urls: ['stun.l.google.com:19302'],
-                username: '',
-                credential: '',
-                ttl: '',
+                urls: ['stun:global.stun.twilio.com:3478?transport=udp', 'turn:global.turn.twilio.com:3478?transport=tcp', 'turn:global.turn.twilio.com:3478?transport=udp'],
+                username: '4aac1e53ade1a5473f8b5da67be3b591113cad11a9c75f957537026f628111fa',
+                credential: 'dyH2YPGFDI8rgDcaAl73jJOR7ga/st4/YpNxsVJ498A='
             }
         }));
     }
@@ -244,6 +279,8 @@ return class extends Plugin {
     onStop() {
         this.webSocket.close();
         Patcher.unpatchAll();
+        if (this.observer)
+            this.observer.disconnect();
     }
 }
 }

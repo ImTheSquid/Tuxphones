@@ -38,8 +38,7 @@ pub struct StreamResolutionInformation {
 pub struct IceData {
     pub urls: Vec<String>,
     pub username: String,
-    pub credential: String,
-    pub ttl: String
+    pub credential: String
 }
 
 /// Commands that can be received from the client plugin
