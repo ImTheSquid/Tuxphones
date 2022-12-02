@@ -5,6 +5,9 @@ Discord screensharing audio for Linux.
 Development is ongoing and therefore some features do not work fully or are broken. If you find a bug, open an issue!
 
 ## State of the Project
+### Project Activity
+We are very busy right now, so progress will be slow for the next few weeks to months.
+
 ### General Support
 We are currently working on supporting PulseAudio and X11. Once these become stable, we will start working on PipeWire and Wayland.
 
