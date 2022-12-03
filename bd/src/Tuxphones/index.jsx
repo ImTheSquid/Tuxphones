@@ -6,9 +6,9 @@ const React = BdApi.React;
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
 const AuthenticationStore = Object.values(ZLibrary.WebpackModules.getAllModules()).find(m => m.exports?.default?.getToken).exports.default; // Works (should be replaced with custom solution eventually)
 const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
-const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR"));
+//const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR"));
 const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
-const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect);
+//const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect);
 const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
 const GoLiveModal = BdApi.Webpack.getModule(m => m.default?.toString().includes("GO_LIVE_MODAL"));
 const GetDesktopSourcesMod = BdApi.Webpack.getModule(m => Object.values(m).filter(v => v).some(v => v.SCREEN && v.WINDOW));
@@ -51,7 +51,6 @@ return class extends Plugin {
         this.selectedFPS = null;
         this.selectedResolution = null;
         this.serverId = null;
-        this.ip = null;
     }
 
     onOpen() {
@@ -84,7 +83,7 @@ return class extends Plugin {
                 WebSocketControl.streamSetPaused(this.streamKey, false);
                 Logger.log(this.streamKey)
 
-                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
+                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
                 return new Promise(res => res());
             } else if (this.currentSoundProfile) {
                 // Hide the stream's existence from Discord until ready to test Tuxphones/Discord interaction
@@ -168,13 +167,13 @@ return class extends Plugin {
         });
 
         // Patch stream to get IP address
-        Patcher.after(RTCControlSocket.Z.prototype, '_handleReady', (that, _, __) => {
-            Logger.log("handling ready")
-            that._connection.on("connected", (___, info) => {
-                Logger.log(info)
-                this.ip = info.address;
-            });
-        });
+        // Patcher.after(RTCControlSocket.Z.prototype, '_handleReady', (that, _, __) => {
+        //     Logger.log("handling ready")
+        //     that._connection.on("connected", (___, info) => {
+        //         Logger.log(info)
+        //         this.ip = info.address;
+        //     });
+        // });
     }
 
     patchGoLive(m) {
@@ -240,7 +239,7 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
         this.webSocket.send(JSON.stringify({
             type: 'StartStream',
             pid: pid,
@@ -253,7 +252,6 @@ return class extends Plugin {
             session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
             rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
             endpoint: endpoint,
-            ip: ip,
             ice: {
                 type: "IceData",
                 urls: ['stun:global.stun.twilio.com:3478?transport=udp', 'turn:global.turn.twilio.com:3478?transport=tcp', 'turn:global.turn.twilio.com:3478?transport=udp'],

@@ -71,7 +71,6 @@ pub mod websocket {
             max_framerate: u8,
             max_resolution: StreamResolutionInformation,
             rtc_connection_id: String,
-            ip: String,
             server_id: String,
             session_id: String,
             token: String,
@@ -113,9 +112,6 @@ pub mod websocket {
                     let nonce_arc = nonce.clone();
 
                     let to_gst_tx = to_gst_tx.clone();
-
-                    // Clone Strings to move across threads
-                    // let ip = ip.clone();
 
                     async move {
                         let msg = match msg {

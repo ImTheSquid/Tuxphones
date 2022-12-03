@@ -1096,8 +1096,8 @@ dependencies = [
 
 [[package]]
 name = "gst-plugin-webrtcredux"
-version = "0.4.0"
-source = "git+https://github.com/ImTheSquid/gst-webrtcredux#c7f092a2b62e8e92022b8729e7b5b74072112f03"
+version = "0.4.1"
+source = "git+https://github.com/ImTheSquid/gst-webrtcredux#fc4cc2d6fb38c935b9fb1662198ddf1c6faa2ca5"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1115,6 +1115,7 @@ dependencies = [
  "tokio",
  "webrtc",
  "webrtc-media",
+ "webrtc-srtp",
  "webrtc-util",
  "xcb",
 ]

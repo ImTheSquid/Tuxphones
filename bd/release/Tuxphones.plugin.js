@@ -82,9 +82,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
   const React = BdApi.React;
   const AuthenticationStore = Object.values(ZLibrary.WebpackModules.getAllModules()).find((m) => m.exports?.default?.getToken).exports.default;
   const RTCConnectionStore = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getRTCConnectionId", "getWasEverRtcConnected"));
-  const WebRequests = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("getXHR"));
   const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
-  const RTCControlSocket = BdApi.Webpack.getModule((m) => m.Z?.prototype?.connect);
   const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
   const GoLiveModal = BdApi.Webpack.getModule((m) => m.default?.toString().includes("GO_LIVE_MODAL"));
   const GetDesktopSourcesMod = BdApi.Webpack.getModule((m) => Object.values(m).filter((v) => v).some((v) => v.SCREEN && v.WINDOW));
@@ -104,10 +102,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         BdApi.showConfirmationModal("Tuxphones Daemon Error", [
           "The Tuxphones daemon was not detected.\n",
           "If you don't know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:",
-          /* @__PURE__ */ React.createElement("a", {
-            href: "https://github.com/ImTheSquid/Tuxphones",
-            target: "_blank"
-          }, "Tuxphones Github"),
+          /* @__PURE__ */ React.createElement("a", { href: "https://github.com/ImTheSquid/Tuxphones", target: "_blank" }, "Tuxphones Github"),
           " \n",
           `If you're sure you already installed the daemon, make sure it's running then click "Reload Discord".`
         ], {
@@ -125,7 +120,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       this.selectedFPS = null;
       this.selectedResolution = null;
       this.serverId = null;
-      this.ip = null;
     }
     onOpen() {
       Patcher.instead(Dispatcher, "dispatch", (_, [arg], original) => {
@@ -158,7 +152,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           this.streamKey = arg.streamKey;
           WebSocketControl.streamSetPaused(this.streamKey, false);
           Logger.log(this.streamKey);
-          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint, this.ip);
+          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
           return new Promise((res2) => res2());
         } else if (this.currentSoundProfile) {
           switch (arg.type) {
@@ -224,13 +218,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           this.getInfo(vals.filter((v) => v.id.startsWith("window")).map((v) => parseInt(v.id.split(":")[1])));
         }));
       });
-      Patcher.after(RTCControlSocket.Z.prototype, "_handleReady", (that, _, __) => {
-        Logger.log("handling ready");
-        that._connection.on("connected", (___, info) => {
-          Logger.log(info);
-          this.ip = info.address;
-        });
-      });
     }
     patchGoLive(m) {
       Patcher.after(m, "default", (_, __, ret) => {
@@ -238,9 +225,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
           if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
             this.showTuxOk = true;
-            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", {
-              style: { "margin-right": "8px" }
-            }, React.createElement(ButtonData, {
+            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", { style: { "margin-right": "8px" } }, React.createElement(ButtonData, {
               onClick: () => {
                 const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
                 this.currentSoundProfile = streamInfo.selectedSource.sound;
@@ -258,7 +243,12 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     }
     createStream(guild_id, channel_id) {
       this.interceptNextStreamServerUpdate = true;
-      WebSocketControl.streamCreate(guild_id === null ? "call" : "guild", guild_id, channel_id, null);
+      WebSocketControl.streamCreate(
+        guild_id === null ? "call" : "guild",
+        guild_id,
+        channel_id,
+        null
+      );
     }
     parseData(msg) {
       let obj = JSON.parse(msg.data);
@@ -283,7 +273,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           Logger.err(`Received unknown command type: ${obj.type}`);
       }
     }
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint, ip) {
+    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
       this.webSocket.send(JSON.stringify({
         type: "StartStream",
         pid,
@@ -296,7 +286,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         session_id: AuthenticationStore.getSessionId(),
         rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
         endpoint,
-        ip,
         ice: {
           type: "IceData",
           urls: ["stun:global.stun.twilio.com:3478?transport=udp", "turn:global.turn.twilio.com:3478?transport=tcp", "turn:global.turn.twilio.com:3478?transport=udp"],

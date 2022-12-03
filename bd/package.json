@@ -10,6 +10,7 @@
   "author": "Jack Hogan",
   "license": "MIT",
   "dependencies": {
+    "esbuild": "^0.15.16",
     "zerespluginlibrary": "^2.0.6"
   },
   "zplConfig": {

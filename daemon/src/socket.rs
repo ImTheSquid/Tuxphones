@@ -67,8 +67,6 @@ pub enum SocketListenerCommand {
         rtc_connection_id: String,
         /// Target endpoint
         endpoint: String,
-        /// Current public IP
-        ip: String,
         /// ICE Data
         ice: Box<IceData>
     },

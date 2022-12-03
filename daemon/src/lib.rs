@@ -83,7 +83,6 @@ impl CommandProcessor {
                                 session_id,
                                 rtc_connection_id,
                                 endpoint,
-                                ip,
                                 ice
                             } => {
                                 info!("[StartStream] Command received");
@@ -144,7 +143,6 @@ impl CommandProcessor {
                                     framerate,
                                     resolution,
                                     rtc_connection_id,
-                                    ip,
                                     server_id,
                                     session_id,
                                     token,
