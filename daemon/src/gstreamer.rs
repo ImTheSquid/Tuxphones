@@ -125,12 +125,12 @@ impl GstHandle {
         //--VIDEO--
 
         //Create a new ximagesrc to get video from the X server
-        let ximagesrc = gst::ElementFactory::make("ximagesrc", None)?;
+        let ximagesrc = gst::ElementFactory::make("ximagesrc").build()?;
 
-        let videoscale = gst::ElementFactory::make("videoscale", None)?;
+        let videoscale = gst::ElementFactory::make("videoscale").build()?;
 
         //Creating a capsfilter to set the resolution and the fps
-        let capsfilter = gst::ElementFactory::make("capsfilter", None)?;
+        let capsfilter = gst::ElementFactory::make("capsfilter").build()?;
 
         let fps_frac = gst::Fraction::new(fps, 1);
 
@@ -156,20 +156,20 @@ impl GstHandle {
         ximagesrc.set_property("xid", xid as u64);
 
         //Create a new videoconvert to allow encoding of the raw video
-        let videoconvert = gst::ElementFactory::make("videoconvert", None)?;
+        let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
 
         //Chose encoder based on constructor params
         let encoder = match encoder_to_use {
             VideoEncoderType::H264(settings) => {
                 //Use nvidia encoder based on settings
                 if settings.nvidia_encoder {
-                    let nvh264enc = gst::ElementFactory::make("nvh264enc", None)?;
+                    let nvh264enc = gst::ElementFactory::make("nvh264enc").build()?;
                     nvh264enc.set_property("gop-size", 2560i32);
                     nvh264enc.set_property_from_str("rc-mode", "cbr-ld-hq");
                     nvh264enc.set_property("zerolatency", true);
                     nvh264enc
                 } else {
-                    let x264enc = gst::ElementFactory::make("x264enc", None)?;
+                    let x264enc = gst::ElementFactory::make("x264enc").build()?;
                     x264enc.set_property("threads", 12u32);
                     x264enc.set_property_from_str("tune", "zerolatency");
                     x264enc.set_property_from_str("speed-preset", "ultrafast");
@@ -180,7 +180,7 @@ impl GstHandle {
                 }
             }
             VideoEncoderType::VP8 => {
-                let vp8enc = gst::ElementFactory::make("vp8enc", None)?;
+                let vp8enc = gst::ElementFactory::make("vp8enc").build()?;
                 vp8enc.set_property("threads", 12i32);
                 vp8enc.set_property("cpu-used", -16i32);
                 vp8enc.set_property_from_str("end-usage", "cbr");
@@ -193,7 +193,7 @@ impl GstHandle {
                 vp8enc
             }
             VideoEncoderType::VP9 => {
-                let vp9enc = gst::ElementFactory::make("vp9enc", None)?;
+                let vp9enc = gst::ElementFactory::make("vp9enc").build()?;
                 vp9enc.set_property("threads", 12i32);
                 vp9enc.set_property("cpu-used", -16i32);
                 vp9enc.set_property_from_str("end-usage", "cbr");
@@ -210,7 +210,7 @@ impl GstHandle {
         //--AUDIO--
 
         // Caps filter for audio from conversion to encoding
-        let audio_capsfilter = gst::ElementFactory::make("capsfilter", None)?;
+        let audio_capsfilter = gst::ElementFactory::make("capsfilter").build()?;
 
         //Create a vector containing the option of the gst caps
         let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("channels", &2), ("rate", &48000)];
@@ -221,14 +221,14 @@ impl GstHandle {
         ));
 
         //Create a new pulsesrc to get audio from the PulseAudio server
-        let pulsesrc = gst::ElementFactory::make("pulsesrc", None)?;
+        let pulsesrc = gst::ElementFactory::make("pulsesrc").build()?;
         //Set the audio device based on constructor parameter (should be the sink of the audio application)
         pulsesrc.set_property_from_str("device", "tuxphones.monitor");
 
         //Create a new audioconvert to allow encoding of the raw audio
-        let audioconvert = gst::ElementFactory::make("audioconvert", None)?;
+        let audioconvert = gst::ElementFactory::make("audioconvert").build()?;
         //Encoder for the raw audio to opus
-        let opusenc = gst::ElementFactory::make("opusenc", None)?;
+        let opusenc = gst::ElementFactory::make("opusenc").build()?;
         opusenc.set_property("bitrate", 32000i32);
         opusenc.set_property_from_str("bitrate-type", "cbr");
         opusenc.set_property("dtx", true);
@@ -240,7 +240,6 @@ impl GstHandle {
 
         let webrtcredux = Arc::new(AsyncMutex::new(WebRtcRedux::default()));
         webrtcredux.lock().await.set_tokio_runtime(Handle::current());
-        webrtcredux.lock().await.set_sdp_semantics(RTCSdpSemantics::UnifiedPlan);
         webrtcredux.lock().await.set_bundle_policy(RTCBundlePolicy::MaxBundle);
 
         let servers = ice.urls.into_iter().map(|url| {
@@ -264,10 +263,10 @@ impl GstHandle {
         webrtcredux.lock().await.add_ice_servers(servers);
 
         //queues
-        let video_encoder_queue = gst::ElementFactory::make("queue", None)?;
-        let audio_encoder_queue = gst::ElementFactory::make("queue", None)?;
-        let video_webrtc_queue = gst::ElementFactory::make("queue", None)?;
-        let audio_webrtc_queue = gst::ElementFactory::make("queue", None)?;
+        let video_encoder_queue = gst::ElementFactory::make("queue").build()?;
+        let audio_encoder_queue = gst::ElementFactory::make("queue").build()?;
+        let video_webrtc_queue = gst::ElementFactory::make("queue").build()?;
+        let audio_webrtc_queue = gst::ElementFactory::make("queue").build()?;
 
 
         //Add elements to the pipeline
@@ -276,14 +275,14 @@ impl GstHandle {
             &video_encoder_queue, &video_webrtc_queue,
             &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc,
             &audio_encoder_queue, &audio_webrtc_queue,
-            webrtcredux.lock().await.upcast_ref::<gst::Element>()])?;
+            webrtcredux.lock().await.upcast_ref::<Element>()])?;
 
         //Link video elements
         // Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_payload_caps, &video_webrtc_queue, &webrtcbin])?;
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &video_webrtc_queue, webrtcredux.lock().await.upcast_ref::<gst::Element>()])?;
+        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &video_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_encoder_queue, &opusenc, &audio_webrtc_queue, webrtcredux.lock().await.upcast_ref::<gst::Element>()])?;
+        Element::link_many(&[&pulsesrc, &audioconvert, &audio_encoder_queue, &opusenc, &audio_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
@@ -321,7 +320,7 @@ impl GstHandle {
 
             Box::pin(async move {
                 if let Some(candidate) = candidate {
-                    debug!("ICE Candidate: {:#?}", candidate.to_json().await.unwrap());
+                    debug!("ICE Candidate: {:#?}", candidate.to_json().unwrap());
                 }
                 // redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
             })
