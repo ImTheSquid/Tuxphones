@@ -731,6 +731,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "derive_builder"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1184,6 +1195,23 @@ dependencies = [
  "tokio",
  "webrtc",
  "webrtc-srtp",
+ "xcb",
+]
+
+[[package]]
+name = "gst-plugin-ximageredux"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8da7579a7f46a443dc11aaca7e41d6289bdbde88ebdad7fb628d4923a6fe57b"
+dependencies = [
+ "anyhow",
+ "derivative",
+ "gst-plugin-version-helper",
+ "gstreamer",
+ "gstreamer-app",
+ "gstreamer-base",
+ "gstreamer-video",
+ "once_cell",
  "xcb",
 ]
 
@@ -2966,6 +2994,7 @@ dependencies = [
  "ctrlc",
  "futures-util",
  "gst-plugin-webrtcredux",
+ "gst-plugin-ximageredux",
  "gstreamer",
  "image",
  "lazy_static",

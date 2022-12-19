@@ -125,7 +125,7 @@ impl GstHandle {
         //--VIDEO--
 
         //Create a new ximagesrc to get video from the X server
-        let ximagesrc = gst::ElementFactory::make("ximagesrc").build()?;
+        let ximagesrc = ximageredux::XImageRedux::default();
 
         let videoscale = gst::ElementFactory::make("videoscale").build()?;
 
@@ -151,9 +151,9 @@ impl GstHandle {
             caps_options.as_ref(),
         ));
 
-        ximagesrc.set_property_from_str("show-pointer", "1");
+        // ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
-        ximagesrc.set_property("xid", xid as u64);
+        ximagesrc.set_property("xid", xid as u32);
 
         //Create a new videoconvert to allow encoding of the raw video
         let videoconvert = gst::ElementFactory::make("videoconvert").build()?;
@@ -231,9 +231,8 @@ impl GstHandle {
         let opusenc = gst::ElementFactory::make("opusenc").build()?;
         opusenc.set_property("bitrate", 32000i32);
         opusenc.set_property_from_str("bitrate-type", "cbr");
-        opusenc.set_property("dtx", true);
         opusenc.set_property("inband-fec", true);
-
+        opusenc.set_property("packet-loss-percentage", 50);
 
 
         //--DESTINATION--
@@ -271,7 +270,7 @@ impl GstHandle {
 
         //Add elements to the pipeline
         pipeline.add_many(&[
-            &ximagesrc, &videoscale, &capsfilter, &videoconvert, &encoder,
+            ximagesrc.upcast_ref::<Element>(), &videoscale, &capsfilter, &videoconvert, &encoder,
             &video_encoder_queue, &video_webrtc_queue,
             &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc,
             &audio_encoder_queue, &audio_webrtc_queue,
@@ -279,7 +278,7 @@ impl GstHandle {
 
         //Link video elements
         // Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_payload_caps, &video_webrtc_queue, &webrtcbin])?;
-        Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &video_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
+        Element::link_many(&[ximagesrc.upcast_ref::<Element>(), &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &video_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
 
         //Link audio elements
         Element::link_many(&[&pulsesrc, &audioconvert, &audio_encoder_queue, &opusenc, &audio_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
@@ -544,7 +543,7 @@ impl GstHandle {
                         let audio_vec_attrs = vec![
                             MediaProp::Attribute {
                                 key: "fmtp".to_string(),
-                                value: Some("111 minptime=10;useinbandfec=1;usedtx=1".to_string())
+                                value: Some("111 minptime=10;useinbandfec=1".to_string())
                             },
                             MediaProp::Attribute {
                                 key: "maxptime".to_string(),

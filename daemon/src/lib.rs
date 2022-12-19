@@ -10,7 +10,7 @@ use x::XServerHandle;
 use u32 as pid;
 use u32 as xid;
 
-use crate::{discord::websocket::{ToGst, WebsocketConnection}, x::XResizeWatcher};
+use crate::{discord::websocket::{ToGst, WebsocketConnection}};
 use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
 use tokio::{sync::{mpsc::{self, Receiver, Sender, channel}, Mutex}, time::sleep};
@@ -27,7 +27,7 @@ pub struct CommandProcessor {
 }
 
 impl CommandProcessor {
-    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration, websocket: Arc<Mutex<WebSocket>>) -> Self {
+    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration, websocket: Arc<Mutex<WebSocket>>, nvidia_accel: bool) -> Self {
         let thread = tokio::spawn(async move {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
@@ -52,7 +52,6 @@ impl CommandProcessor {
 
             let mut gst_is_loaded = false;
 
-            let mut resize_watcher = None;
             let mut ws: Option<WebsocketConnection> = None;
             let mut stream = None;
 
@@ -106,15 +105,6 @@ impl CommandProcessor {
 
                                 let (to_ws_tx, from_gst_rx): (Sender<ToWs>, Receiver<ToWs>) = channel(10);
                                 let (to_gst_tx, from_ws_rx): (Sender<ToGst>, Receiver<ToGst>) = channel(10);
-                                let (gst_resize_tx, gst_resize_rx) = channel(10);
-
-                                let _ = resize_watcher.insert(match XResizeWatcher::new(xid, gst_resize_tx, Duration::from_secs(1)) {
-                                    Ok(watcher) => watcher,
-                                    Err(e) => {
-                                        error!("Failed to start resize watcher: {}", e);
-                                        continue;
-                                    }
-                                });
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 // TODO: Find a better way to do this
@@ -128,7 +118,7 @@ impl CommandProcessor {
                                 }
 
                                 let gst = GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings{nvidia_encoder: false}),
+                                    VideoEncoderType::H264(H264Settings{nvidia_encoder: nvidia_accel}),
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
@@ -166,8 +156,6 @@ impl CommandProcessor {
                                 // Kill gstreamer and ws
                                 ws.take();
                                 stream.take();
-
-                                resize_watcher.take();
 
                                 pulse.stop_capture();
                                 pulse.teardown_audio_capture();

@@ -31,3 +31,4 @@ gst-plugin-webrtcredux = { git="https://github.com/ImTheSquid/gst-webrtcredux" }
 tokio = "1.22.0"
 tokio-native-tls = "0.3.0"
 tracing-log = "0.1.3"
+gst-plugin-ximageredux = "0.1.4"

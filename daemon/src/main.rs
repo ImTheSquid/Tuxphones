@@ -57,28 +57,6 @@ async fn main() {
     //     }
     // }
 
-    // Panic handling
-    // https://stackoverflow.com/questions/35988775/how-can-i-cause-a-panic-on-a-thread-to-immediately-end-the-main-thread
-    let orig_hook = panic::take_hook();
-    panic::set_hook(Box::new(move |panic_info| {
-        orig_hook(panic_info);
-
-        // Try to remove socket file
-        match env::var("HOME") {
-            Ok(val) => {
-                let path = Path::new(&val).join(".config").join("tuxphones.sock");
-                if let Err(e) = fs::remove_file(&path) {
-                    error!("Error removing socket file: {e}");
-                } else {
-                    info!("Socket file removed");
-                }
-            },
-            Err(e) => error!("Error removing socket file: {e}")
-        }
-
-        process::exit(1);
-    }));
-
     let (sender, receiver) = mpsc::channel(1000);
 
     let socket_watcher: Arc<Mutex<WebSocket>> = match WebSocket::new(9000, sender.clone()).await {
