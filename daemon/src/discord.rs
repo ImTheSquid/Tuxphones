@@ -1,21 +1,21 @@
 pub mod websocket {
     use std::borrow::BorrowMut;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
 
+    use tokio::sync::mpsc;
     use tokio::sync::Mutex;
     use tokio::task;
-    use tokio::sync::mpsc;
     use tokio::task::JoinHandle;
     // use async_std::{channel, task};
     // use async_std::sync::Mutex;
     // use async_std::task::JoinHandle;
     use async_tungstenite::tokio::{connect_async, ConnectStream};
-    use async_tungstenite::tungstenite::{Message};
+    use async_tungstenite::tungstenite::Message;
     use async_tungstenite::WebSocketStream;
-    use futures_util::{SinkExt};
     use futures_util::stream::{SplitSink, StreamExt};
+    use futures_util::SinkExt;
     use lazy_static::lazy_static;
     use rand::Rng;
     use regex::Regex;
@@ -43,8 +43,8 @@ pub mod websocket {
     }
 
     #[derive(Debug)]
-    pub struct ToGst{
-        pub remote_sdp: String
+    pub struct ToGst {
+        pub remote_sdp: String,
     }
 
     impl Drop for WebsocketConnection {
@@ -80,10 +80,14 @@ pub mod websocket {
             command_sender: mpsc::Sender<SocketListenerCommand>,
         ) -> Result<Self, async_tungstenite::tungstenite::Error> {
             //v7 is going to be deprecated according to discord's docs (https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87) but is the one that discord client still use for video streams
-            let (mut ws_stream, response) = connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
+            let (mut ws_stream, response) =
+                connect_async(format!("wss://{}/?v={}", endpoint, API_VERSION)).await?;
 
             if response.status() != 101 {
-                error!("Connection failed with response code: {:?}", response.status());
+                error!(
+                    "Connection failed with response code: {:?}",
+                    response.status()
+                );
                 let _ = ws_stream.close(None).await;
                 return Err(async_tungstenite::tungstenite::Error::ConnectionClosed);
             } else {
@@ -239,7 +243,15 @@ pub mod websocket {
             let ws_listener_task = task::spawn(ws_listener);
 
             // TODO better error handling
-            match Self::auth(ws_write.clone().lock().await.borrow_mut(), server_id, session_id, token, user_id).await {
+            match Self::auth(
+                ws_write.clone().lock().await.borrow_mut(),
+                server_id,
+                session_id,
+                token,
+                user_id,
+            )
+            .await
+            {
                 Ok(_) => {}
                 Err(e) => {
                     ws_listener_task.abort();
@@ -250,17 +262,32 @@ pub mod websocket {
             let ws_data = from_gst_rx.recv().await.unwrap();
             debug!("Got data from gst: {:?}", ws_data);
 
-            Self::send_stream_information(ws_write.clone().lock().await.borrow_mut(), ws_data, GatewayResolution::from_socket_info(max_resolution), max_framerate, rtc_connection_id).await.expect("Failed to send stream information");
+            Self::send_stream_information(
+                ws_write.clone().lock().await.borrow_mut(),
+                ws_data,
+                GatewayResolution::from_socket_info(max_resolution),
+                max_framerate,
+                rtc_connection_id,
+            )
+            .await
+            .expect("Failed to send stream information");
 
-
-            Ok(Self { task: Some(ws_listener_task), heartbeat_task })
+            Ok(Self {
+                task: Some(ws_listener_task),
+                heartbeat_task,
+            })
         }
-
 
         /// auth the websocket connection using opcode 0
         /// https://www.figma.com/file/AJoBnWrHIFxjeppBRVfqXP/Discord-stream-flow?node-id=48%3A87
         #[tracing::instrument]
-        pub async fn auth(write: &mut WebSocketWrite, server_id: String, session_id: String, token: String, user_id: String) -> Result<(), async_tungstenite::tungstenite::Error> {
+        pub async fn auth(
+            write: &mut WebSocketWrite,
+            server_id: String,
+            session_id: String,
+            token: String,
+            user_id: String,
+        ) -> Result<(), async_tungstenite::tungstenite::Error> {
             let ws_message = OutgoingWebsocketMessage::OpCode0(OpCode0 {
                 server_id,
                 session_id,
@@ -278,7 +305,8 @@ pub mod websocket {
                 token,
                 user_id,
                 video: true,
-            }).to_json();
+            })
+            .to_json();
 
             trace!("[AUTH] {:?}", ws_message);
 
@@ -288,11 +316,14 @@ pub mod websocket {
         }
 
         #[tracing::instrument]
-        pub async fn send_heartbeat(write: &mut WebSocketWrite) -> Result<u64, async_tungstenite::tungstenite::Error> {
+        pub async fn send_heartbeat(
+            write: &mut WebSocketWrite,
+        ) -> Result<u64, async_tungstenite::tungstenite::Error> {
             let nonce: u64 = rand::random();
             let ws_message = OutgoingWebsocketMessage::OpCode3(OpCode3_6 {
                 d: Value::Number(Number::from(nonce)),
-            }).to_json();
+            })
+            .to_json();
 
             trace!("[HEARTBEAT] {}", ws_message);
 
@@ -312,20 +343,19 @@ pub mod websocket {
                 audio_ssrc: ssrcs.audio,
                 rtx_ssrc: ssrcs.rtx,
                 video_ssrc: ssrcs.video,
-                streams: vec![
-                    GatewayStream {
-                        stream_type: "video".to_string(),
-                        rid: "100".to_string(),
-                        quality: 100,
-                        active: Some(true),
-                        ssrc: Some(ssrcs.video),
-                        rtx_ssrc: Some(ssrcs.rtx),
-                        max_bitrate: Some(MAX_BITRATE),
-                        max_framerate: Some(max_framerate),
-                        max_resolution: Some(max_resolution),
-                    }
-                ],
-            }).to_json();
+                streams: vec![GatewayStream {
+                    stream_type: "video".to_string(),
+                    rid: "100".to_string(),
+                    quality: 100,
+                    active: Some(true),
+                    ssrc: Some(ssrcs.video),
+                    rtx_ssrc: Some(ssrcs.rtx),
+                    max_bitrate: Some(MAX_BITRATE),
+                    max_framerate: Some(max_framerate),
+                    max_resolution: Some(max_resolution),
+                }],
+            })
+            .to_json();
 
             trace!("[PARTIAL STREAM] {ws12}");
 
@@ -341,7 +371,8 @@ pub mod websocket {
                 ssrc: 0,
                 speaking: true,
                 delay: 5,
-            }).to_json();
+            })
+            .to_json();
 
             trace!("[SPEAKING] {ws5}");
 
@@ -355,7 +386,7 @@ pub mod websocket {
             web_rtc_data: ToWs,
             max_resolution: GatewayResolution,
             max_framerate: u8,
-            rtc_connection_id: String
+            rtc_connection_id: String,
         ) -> Result<(), async_tungstenite::tungstenite::Error> {
             let ws1 = OutgoingWebsocketMessage::OpCode1(OpCode1 {
                 protocol: "webrtc".to_string(),
@@ -374,11 +405,12 @@ pub mod websocket {
                         priority: 1000,
                         payload_type: web_rtc_data.video_payload_type,
                         rtx_payload_type: Some(web_rtc_data.rtx_payload_type),
-                    }
+                    },
                 ],
                 data: web_rtc_data.local_sdp.clone(),
                 sdp: web_rtc_data.local_sdp,
-            }).to_json();
+            })
+            .to_json();
 
             trace!("[STREAM] {ws1}");
 
@@ -389,8 +421,9 @@ pub mod websocket {
                 write,
                 web_rtc_data.ssrcs,
                 max_resolution,
-                max_framerate
-            ).await?;
+                max_framerate,
+            )
+            .await?;
 
             Self::send_speaking_message(write).await?;
 

@@ -1,10 +1,21 @@
-use std::{time::Duration, sync::{Arc, atomic::{AtomicBool, Ordering}}, process, panic, env, path::Path, fs};
-use tokio::{signal::{ctrl_c, unix::SignalKind}, sync::mpsc};
+use std::{
+    panic,
+    process,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::sync::Mutex;
+use tokio::{
+    signal::{ctrl_c, unix::SignalKind},
+    sync::mpsc,
+};
 use tracing::{error, info, Level};
 use tracing_log::LogTracer;
 use tracing_subscriber::FmtSubscriber;
 use tuxphones::{socket::WebSocket, CommandProcessor};
-use tokio::sync::Mutex;
 
 #[tokio::main]
 async fn main() {
@@ -18,7 +29,7 @@ async fn main() {
                 2 => Level::INFO,
                 3 => Level::DEBUG,
                 4 => Level::TRACE,
-                _ => Level::ERROR
+                _ => Level::ERROR,
             };
             gst_level = level.clamp(0, 4);
         }
@@ -29,12 +40,10 @@ async fn main() {
         std::env::set_var("GST_DEBUG", gst_level.to_string());
     }
 
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(log_level)
-        .finish();
+    let subscriber = FmtSubscriber::builder().with_max_level(log_level).finish();
 
     match tracing::subscriber::set_global_default(subscriber) {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             eprintln!("Failed to set global logging default subscriber: {}", e);
         }
@@ -43,7 +52,7 @@ async fn main() {
     LogTracer::init().unwrap();
 
     let run = Arc::new(AtomicBool::new(true));
-    let r= Arc::clone(&run);
+    let r = Arc::clone(&run);
 
     // Ctrl+C handling
     // match ctrlc::set_handler(move || {
@@ -67,7 +76,13 @@ async fn main() {
         }
     };
 
-    let mut command_processor = CommandProcessor::new(receiver, sender.clone(), Arc::clone(&run), Duration::from_millis(500), socket_watcher.clone());
+    let mut command_processor = CommandProcessor::new(
+        receiver,
+        sender.clone(),
+        Arc::clone(&run),
+        Duration::from_millis(500),
+        socket_watcher.clone(),
+    );
 
     info!("Daemon started");
 

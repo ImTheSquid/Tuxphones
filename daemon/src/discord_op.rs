@@ -1,14 +1,13 @@
 pub mod opcodes {
+    use crate::socket::StreamResolutionInformation;
     use lazy_static::lazy_static;
     use regex::Regex;
-    use serde::{Serializer};
+    use serde::Serializer;
     use serde_json::Value;
-    use crate::{socket::StreamResolutionInformation};
 
     lazy_static! {
         static ref OPCODE_OUTGOING_REGEX: Regex = Regex::new(r#""op":"(?P<op>\d+)""#).unwrap();
     }
-
 
     #[derive(serde::Serialize, Debug)]
     #[serde(tag = "op", content = "d")]
@@ -27,12 +26,14 @@ pub mod opcodes {
         OpCode5(OpCode5),
         /// Message containing info about the stream
         #[serde(rename = "12")]
-        OpCode12(OpCode12)
+        OpCode12(OpCode12),
     }
 
     impl OutgoingWebsocketMessage {
         pub fn to_json(&self) -> String {
-            OPCODE_OUTGOING_REGEX.replace(&serde_json::to_string(&self).unwrap(), "\"op\":$op").to_string()
+            OPCODE_OUTGOING_REGEX
+                .replace(&serde_json::to_string(&self).unwrap(), "\"op\":$op")
+                .to_string()
         }
     }
 
@@ -56,9 +57,8 @@ pub mod opcodes {
         OpCode15(OpCode15),
         // Version information
         #[serde(rename = "16")]
-        OpCode16(OpCode16)
+        OpCode16(OpCode16),
     }
-
 
     #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
     pub struct GatewayResolution {
@@ -70,11 +70,11 @@ pub mod opcodes {
 
     impl GatewayResolution {
         pub fn from_socket_info(info: StreamResolutionInformation) -> Self {
-            GatewayResolution { resolution_type: if info.is_fixed {
-                "fixed"
-            } else {
-                "source"
-            }.to_string(), width: info.width, height: info.height }
+            GatewayResolution {
+                resolution_type: if info.is_fixed { "fixed" } else { "source" }.to_string(),
+                width: info.width,
+                height: info.height,
+            }
         }
     }
 
@@ -130,7 +130,7 @@ pub mod opcodes {
         pub codec_type: PayloadType,
         pub priority: u16,
         pub payload_type: u8,
-        pub rtx_payload_type: Option<u8>
+        pub rtx_payload_type: Option<u8>,
     }
 
     /// Outgoing message containing info about the stream
@@ -140,7 +140,7 @@ pub mod opcodes {
         pub rtc_connection_id: String,
         pub codecs: Vec<GatewayCodec>,
         pub data: String,
-        pub sdp: String
+        pub sdp: String,
     }
 
     /// Incoming message containing configuration options for webrtc connection (This is not used by this program)
@@ -155,7 +155,7 @@ pub mod opcodes {
         /// Not used by us since we're getting those from webrtc
         pub ssrc: u32,
         /// NOT USED SINCE THIS PROGRAM IS USING WebRTC
-        pub streams: Vec<GatewayStream>
+        pub streams: Vec<GatewayStream>,
     }
 
     /// Heartbeat message
@@ -168,7 +168,7 @@ pub mod opcodes {
     #[derive(serde::Deserialize, Debug)]
     pub enum AudioCodec {
         #[serde(rename = "opus")]
-        Opus
+        Opus,
     }
 
     #[derive(serde::Deserialize, Debug)]
@@ -179,7 +179,7 @@ pub mod opcodes {
         pub media_session_id: String,
         /// Remote sdp
         pub sdp: String,
-        pub video_codec: String
+        pub video_codec: String,
     }
 
     #[derive(serde::Serialize, Debug)]
@@ -191,8 +191,8 @@ pub mod opcodes {
     }
 
     fn serialize_bool_to_u8<S>(x: &bool, s: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
+    where
+        S: Serializer,
     {
         s.serialize_u8(*x as u8)
     }
@@ -226,6 +226,6 @@ pub mod opcodes {
     #[derive(serde::Deserialize, Debug)]
     pub struct OpCode16 {
         pub voice: String,
-        pub rtc_worker: String
+        pub rtc_worker: String,
     }
 }

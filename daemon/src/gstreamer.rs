@@ -1,21 +1,26 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use gst::{debug_bin_to_dot_data, DebugGraphDetails, Element, glib, PadLinkError, StateChangeError, StateChangeSuccess};
 use gst::prelude::*;
+use gst::{
+    debug_bin_to_dot_data, glib, DebugGraphDetails, Element, PadLinkError, StateChangeError,
+    StateChangeSuccess,
+};
 use regex::Regex;
 use tokio::runtime::Handle;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 use tracing::{debug, error, info, trace};
-use webrtcredux::sdp::{SdpProp, MediaType, MediaProp, NetworkType, AddressType, LineEnding};
-use webrtcredux::{RTCIceServer, RTCSdpType, RTCIceGathererState, RTCSdpSemantics, RTCBundlePolicy};
-use tokio::sync::{Mutex as AsyncMutex, mpsc};
-
-use crate::{socket::{StreamResolutionInformation, IceData}, ToGst, xid};
-
-use webrtcredux::webrtcredux::{
-    sdp::{SDP},
-    WebRtcRedux,
+use webrtcredux::sdp::{AddressType, LineEnding, MediaProp, MediaType, NetworkType, SdpProp};
+use webrtcredux::{
+    RTCBundlePolicy, RTCIceGathererState, RTCIceServer, RTCSdpType,
 };
+
+use crate::{
+    socket::{IceData, StreamResolutionInformation},
+    xid, ToGst,
+};
+
+use webrtcredux::webrtcredux::{sdp::SDP, WebRtcRedux};
 
 #[derive(Debug)]
 pub enum GstInitializationError {
@@ -36,7 +41,7 @@ pub struct ToWs {
     pub ssrcs: StreamSSRCs,
     pub local_sdp: String,
     pub video_payload_type: u8,
-    pub rtx_payload_type: u8
+    pub rtx_payload_type: u8,
 }
 
 impl std::fmt::Display for GstInitializationError {
@@ -96,7 +101,7 @@ pub struct GstHandle {
     // webrtcbin: Element,
     webrtcredux: Arc<AsyncMutex<WebRtcRedux>>,
     encoder: Element,
-    encoder_type: VideoEncoderType
+    encoder_type: VideoEncoderType,
 }
 
 //Custom drop logic to deinit gstreamer when all handles are dropped
@@ -117,7 +122,11 @@ impl GstHandle {
     /// # Arguments
     /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub async fn new(
-        encoder_to_use: VideoEncoderType, xid: xid, resolution: StreamResolutionInformation, fps: i32, ice: IceData
+        encoder_to_use: VideoEncoderType,
+        xid: xid,
+        resolution: StreamResolutionInformation,
+        fps: i32,
+        ice: IceData,
     ) -> Result<Self, GstInitializationError> {
         //Create a new GStreamer pipeline
         let pipeline = gst::Pipeline::new(None);
@@ -135,7 +144,8 @@ impl GstHandle {
         let fps_frac = gst::Fraction::new(fps, 1);
 
         //Create a vector containing the option of the gst caps
-        let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("framerate", &fps_frac)];
+        let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> =
+            vec![("framerate", &fps_frac)];
 
         //If the resolution is specified, add it to the caps
         let width = resolution.width as i32;
@@ -145,11 +155,10 @@ impl GstHandle {
             caps_options.push(("height", &height));
         };
 
-
-        capsfilter.set_property("caps", &gst::Caps::new_simple(
-            "video/x-raw",
-            caps_options.as_ref(),
-        ));
+        capsfilter.set_property(
+            "caps",
+            &gst::Caps::new_simple("video/x-raw", caps_options.as_ref()),
+        );
 
         // ximagesrc.set_property_from_str("show-pointer", "1");
         //Set xid based on constructor parameter to get video only from the specified X window
@@ -213,12 +222,13 @@ impl GstHandle {
         let audio_capsfilter = gst::ElementFactory::make("capsfilter").build()?;
 
         //Create a vector containing the option of the gst caps
-        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> = vec![("channels", &2), ("rate", &48000)];
+        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> =
+            vec![("channels", &2), ("rate", &48000)];
 
-        audio_capsfilter.set_property("caps", &gst::Caps::new_simple(
-            "audio/x-raw",
-            caps_options.as_ref(),
-        ));
+        audio_capsfilter.set_property(
+            "caps",
+            &gst::Caps::new_simple("audio/x-raw", caps_options.as_ref()),
+        );
 
         //Create a new pulsesrc to get audio from the PulseAudio server
         let pulsesrc = gst::ElementFactory::make("pulsesrc").build()?;
@@ -234,28 +244,37 @@ impl GstHandle {
         opusenc.set_property("inband-fec", true);
         opusenc.set_property("packet-loss-percentage", 50);
 
-
         //--DESTINATION--
 
         let webrtcredux = Arc::new(AsyncMutex::new(WebRtcRedux::default()));
-        webrtcredux.lock().await.set_tokio_runtime(Handle::current());
-        webrtcredux.lock().await.set_bundle_policy(RTCBundlePolicy::MaxBundle);
+        webrtcredux
+            .lock()
+            .await
+            .set_tokio_runtime(Handle::current());
+        webrtcredux
+            .lock()
+            .await
+            .set_bundle_policy(RTCBundlePolicy::MaxBundle);
 
-        let servers = ice.urls.into_iter().map(|url| {
-            if url.starts_with("turn") {
-                RTCIceServer {
-                    urls: vec![url],
-                    username: ice.username.clone(),
-                    credential: ice.credential.clone(),
-                    .. RTCIceServer::default()
+        let servers = ice
+            .urls
+            .into_iter()
+            .map(|url| {
+                if url.starts_with("turn") {
+                    RTCIceServer {
+                        urls: vec![url],
+                        username: ice.username.clone(),
+                        credential: ice.credential.clone(),
+                        ..RTCIceServer::default()
+                    }
+                } else {
+                    RTCIceServer {
+                        urls: vec![url],
+                        ..RTCIceServer::default()
+                    }
                 }
-            } else {
-                RTCIceServer {
-                    urls: vec![url],
-                    .. RTCIceServer::default()
-                }
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         debug!("Using ICE servers: {:#?}", servers);
 
@@ -267,21 +286,46 @@ impl GstHandle {
         let video_webrtc_queue = gst::ElementFactory::make("queue").build()?;
         let audio_webrtc_queue = gst::ElementFactory::make("queue").build()?;
 
-
         //Add elements to the pipeline
         pipeline.add_many(&[
-            ximagesrc.upcast_ref::<Element>(), &videoscale, &capsfilter, &videoconvert, &encoder,
-            &video_encoder_queue, &video_webrtc_queue,
-            &pulsesrc, &audioconvert, &audio_capsfilter, &opusenc,
-            &audio_encoder_queue, &audio_webrtc_queue,
-            webrtcredux.lock().await.upcast_ref::<Element>()])?;
+            ximagesrc.upcast_ref::<Element>(),
+            &videoscale,
+            &capsfilter,
+            &videoconvert,
+            &encoder,
+            &video_encoder_queue,
+            &video_webrtc_queue,
+            &pulsesrc,
+            &audioconvert,
+            &audio_capsfilter,
+            &opusenc,
+            &audio_encoder_queue,
+            &audio_webrtc_queue,
+            webrtcredux.lock().await.upcast_ref::<Element>(),
+        ])?;
 
         //Link video elements
         // Element::link_many(&[&ximagesrc, &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &encoder_pay, &video_payload_caps, &video_webrtc_queue, &webrtcbin])?;
-        Element::link_many(&[ximagesrc.upcast_ref::<Element>(), &videoscale, &capsfilter, &videoconvert, &video_encoder_queue, &encoder, &video_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
+        Element::link_many(&[
+            ximagesrc.upcast_ref::<Element>(),
+            &videoscale,
+            &capsfilter,
+            &videoconvert,
+            &video_encoder_queue,
+            &encoder,
+            &video_webrtc_queue,
+            webrtcredux.lock().await.upcast_ref::<Element>(),
+        ])?;
 
         //Link audio elements
-        Element::link_many(&[&pulsesrc, &audioconvert, &audio_encoder_queue, &opusenc, &audio_webrtc_queue, webrtcredux.lock().await.upcast_ref::<Element>()])?;
+        Element::link_many(&[
+            &pulsesrc,
+            &audioconvert,
+            &audio_encoder_queue,
+            &opusenc,
+            &audio_webrtc_queue,
+            webrtcredux.lock().await.upcast_ref::<Element>(),
+        ])?;
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
@@ -291,59 +335,93 @@ impl GstHandle {
             pipeline,
             webrtcredux,
             encoder,
-            encoder_type: encoder_to_use
+            encoder_type: encoder_to_use,
         })
     }
 
-    pub async fn start(&self, to_ws_tx: mpsc::Sender<ToWs>, from_ws_rx: mpsc::Receiver<ToGst>) -> Result<StateChangeSuccess, StateChangeError> {
+    pub async fn start(
+        &self,
+        to_ws_tx: mpsc::Sender<ToWs>,
+        from_ws_rx: mpsc::Receiver<ToGst>,
+    ) -> Result<StateChangeSuccess, StateChangeError> {
         self.pipeline.set_state(gst::State::Playing)?;
         let encoder = self.encoder_type;
 
         let arc_from_ws = Arc::new(AsyncMutex::new(from_ws_rx));
 
-        self.webrtcredux.lock().await.on_peer_connection_state_change(Box::new(|state| {
-            debug!("[WebRTC] Peer connection state changed to: {}", state);
+        self.webrtcredux
+            .lock()
+            .await
+            .on_peer_connection_state_change(Box::new(|state| {
+                debug!("[WebRTC] Peer connection state changed to: {}", state);
 
-            Box::pin(async {})
-        })).await.expect("Failed to set on peer connection state change");
+                Box::pin(async {})
+            }))
+            .await
+            .expect("Failed to set on peer connection state change");
 
-        self.webrtcredux.lock().await.on_ice_connection_state_change(Box::new(|state| {
-            debug!("[WebRTC] ICE connection state changed to: {}", state);
+        self.webrtcredux
+            .lock()
+            .await
+            .on_ice_connection_state_change(Box::new(|state| {
+                debug!("[WebRTC] ICE connection state changed to: {}", state);
 
-            Box::pin(async {})
-        })).await.expect("Failed to set on ice connection state change");
+                Box::pin(async {})
+            }))
+            .await
+            .expect("Failed to set on ice connection state change");
 
         // let redux_arc = self.webrtcredux.clone();
-        self.webrtcredux.lock().await.on_ice_candidate(Box::new(move |candidate| {
-            // let redux_arc = redux_arc.clone();
+        self.webrtcredux
+            .lock()
+            .await
+            .on_ice_candidate(Box::new(move |candidate| {
+                // let redux_arc = redux_arc.clone();
 
-            Box::pin(async move {
-                if let Some(candidate) = candidate {
-                    debug!("ICE Candidate: {:#?}", candidate.to_json().unwrap());
-                }
-                // redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
-            })
-        })).await.expect("Failed ice candidate");
+                Box::pin(async move {
+                    if let Some(candidate) = candidate {
+                        debug!("ICE Candidate: {:#?}", candidate.to_json().unwrap());
+                    }
+                    // redux_arc.lock().await.add_ice_candidate(candidate.unwrap().to_json().await.unwrap()).await.unwrap();
+                })
+            }))
+            .await
+            .expect("Failed ice candidate");
 
         let redux_arc = self.webrtcredux.clone();
-        self.webrtcredux.lock().await.on_negotiation_needed(Box::new(move || {
-            let redux_arc = redux_arc.clone();
+        self.webrtcredux
+            .lock()
+            .await
+            .on_negotiation_needed(Box::new(move || {
+                let redux_arc = redux_arc.clone();
 
-            info!("[WebRTC] Negotiation needed");
+                info!("[WebRTC] Negotiation needed");
 
-            Box::pin(async move {
-                // Waits for all tracks to be added to create full SDP
-                redux_arc.lock().await.wait_for_all_tracks().await;
+                Box::pin(async move {
+                    // Waits for all tracks to be added to create full SDP
+                    redux_arc.lock().await.wait_for_all_tracks().await;
 
-                let offer = redux_arc.lock().await.create_offer(None).await.expect("Failed to create offer");
+                    let offer = redux_arc
+                        .lock()
+                        .await
+                        .create_offer(None)
+                        .await
+                        .expect("Failed to create offer");
 
-                trace!("[WebRTC] Generated local SDP: {:#?}", offer);
+                    trace!("[WebRTC] Generated local SDP: {:#?}", offer);
 
-                redux_arc.lock().await.set_local_description(&offer, RTCSdpType::Offer).await.expect("Failed to set local description");
+                    redux_arc
+                        .lock()
+                        .await
+                        .set_local_description(&offer, RTCSdpType::Offer)
+                        .await
+                        .expect("Failed to set local description");
 
-                info!("[WebRTC] Local description set");
-            })
-        })).await.expect("Failed to set on negotiation needed");
+                    info!("[WebRTC] Local description set");
+                })
+            }))
+            .await
+            .expect("Failed to set on negotiation needed");
 
         let redux_arc = self.webrtcredux.clone();
         self.webrtcredux.lock().await.on_ice_gathering_state_change(Box::new(move |state| {

@@ -1,33 +1,51 @@
-use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, self}};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::{self, Duration},
+};
 
 use sysinfo::{Pid, PidExt, Process, ProcessExt, SystemExt};
 use tracing::{error, info};
 
 use pulse::PulseHandle;
-use socket::{SocketListenerCommand, Application, WebSocket};
+use socket::{Application, SocketListenerCommand, WebSocket};
 use x::XServerHandle;
 // Makes sure typing is preserved
 use u32 as pid;
 use u32 as xid;
 
-use crate::{discord::websocket::{ToGst, WebsocketConnection}};
+use crate::discord::websocket::{ToGst, WebsocketConnection};
 use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
 
-use tokio::{sync::{mpsc::{self, Receiver, Sender, channel}, Mutex}, time::sleep};
+use tokio::{
+    sync::{
+        mpsc::{self, channel, Receiver, Sender},
+        Mutex,
+    },
+    time::sleep,
+};
 
-mod pulse;
-mod gstreamer;
-pub mod socket;
-mod x;
 mod discord;
 mod discord_op;
+mod gstreamer;
+mod pulse;
+pub mod socket;
+mod x;
 
 pub struct CommandProcessor {
     thread: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl CommandProcessor {
-    pub fn new(mut receiver: mpsc::Receiver<SocketListenerCommand>, ws_sender: mpsc::Sender<SocketListenerCommand>, run: Arc<AtomicBool>, sleep_time: Duration, websocket: Arc<Mutex<WebSocket>>, nvidia_accel: bool) -> Self {
+    pub fn new(
+        mut receiver: mpsc::Receiver<SocketListenerCommand>,
+        ws_sender: mpsc::Sender<SocketListenerCommand>,
+        run: Arc<AtomicBool>,
+        sleep_time: Duration,
+        websocket: Arc<Mutex<WebSocket>>,
+    ) -> Self {
         let thread = tokio::spawn(async move {
             let mut pulse = match PulseHandle::new() {
                 Ok(handle) => handle,
@@ -62,7 +80,9 @@ impl CommandProcessor {
                     stream.take();
                     current_xid.take();
                     if gst_is_loaded {
-                        unsafe {gst::deinit();}
+                        unsafe {
+                            gst::deinit();
+                        }
                     }
                     info!("Command processor shut down");
                     break;
@@ -82,7 +102,7 @@ impl CommandProcessor {
                                 session_id,
                                 rtc_connection_id,
                                 endpoint,
-                                ice
+                                ice,
                             } => {
                                 info!("[StartStream] Command received");
                                 match pulse.setup_audio_capture(None) {
@@ -103,8 +123,10 @@ impl CommandProcessor {
 
                                 let _ = current_xid.insert(xid);
 
-                                let (to_ws_tx, from_gst_rx): (Sender<ToWs>, Receiver<ToWs>) = channel(10);
-                                let (to_gst_tx, from_ws_rx): (Sender<ToGst>, Receiver<ToGst>) = channel(10);
+                                let (to_ws_tx, from_gst_rx): (Sender<ToWs>, Receiver<ToWs>) =
+                                    channel(10);
+                                let (to_gst_tx, from_ws_rx): (Sender<ToGst>, Receiver<ToGst>) =
+                                    channel(10);
 
                                 // Quick and drity check to try to detect Nvidia drivers
                                 // TODO: Find a better way to do this
@@ -118,13 +140,19 @@ impl CommandProcessor {
                                 }
 
                                 let gst = GstHandle::new(
-                                    VideoEncoderType::H264(H264Settings{nvidia_encoder: nvidia_accel}),
+                                    VideoEncoderType::H264(H264Settings {
+                                        nvidia_encoder: false,
+                                    }),
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
                                     *ice,
-                                ).await.expect("Failed to initialize gstreamer pipeline");
-                                gst.start(to_ws_tx, from_ws_rx).await.expect("Failed to start stream");
+                                )
+                                .await
+                                .expect("Failed to initialize gstreamer pipeline");
+                                gst.start(to_ws_tx, from_ws_rx)
+                                    .await
+                                    .expect("Failed to start stream");
 
                                 let _ = stream.insert(gst);
 
@@ -140,7 +168,9 @@ impl CommandProcessor {
                                     from_gst_rx,
                                     to_gst_tx,
                                     ws_sender.clone(),
-                                ).await {
+                                )
+                                .await
+                                {
                                     Ok(ws_handle) => Some(ws_handle),
                                     Err(e) => {
                                         error!("Failed to create websocket connection: {:?}", e);
@@ -150,7 +180,8 @@ impl CommandProcessor {
 
                                 info!("[StartStream] Command processed (stream started)");
                             }
-                            SocketListenerCommand::StopStream | SocketListenerCommand::StopStreamInternal => {
+                            SocketListenerCommand::StopStream
+                            | SocketListenerCommand::StopStreamInternal => {
                                 info!("[StopStream] Command received");
 
                                 // Kill gstreamer and ws
@@ -164,8 +195,13 @@ impl CommandProcessor {
 
                                 // If stream was stopped internally, send a notification to the client
                                 if cmd == SocketListenerCommand::StopStreamInternal {
-                                    if let Err(e) = websocket.lock().await.stream_stop_internal().await {
-                                        error!("Failed to notify client of internal stream stop: {:?}", e);
+                                    if let Err(e) =
+                                        websocket.lock().await.stream_stop_internal().await
+                                    {
+                                        error!(
+                                            "Failed to notify client of internal stream stop: {:?}",
+                                            e
+                                        );
                                     }
                                 }
                             }
@@ -202,18 +238,23 @@ impl CommandProcessor {
                                 // Find all processes with given name
                                 let mut system = sysinfo::System::new();
                                 system.refresh_processes();
-                                let processes_with_cmd: Vec<(&Pid, &Process)> = system.processes()
+                                let processes_with_cmd: Vec<(&Pid, &Process)> = system
+                                    .processes()
                                     .iter()
                                     .filter(|(_, p)| !p.cmd().is_empty())
                                     .collect();
 
                                 for app in &apps {
                                     for (proc_pid, process) in &processes_with_cmd {
-                                        let cmd_strings: Vec<&str> = process.cmd()[0].split(' ').collect();
+                                        let cmd_strings: Vec<&str> =
+                                            process.cmd()[0].split(' ').collect();
                                         // If the command matches the Pulse application name
                                         if cmd_strings[0].ends_with(&format!("/{}", &app.name)) {
                                             // And the PID of an XID window matches the PID of the found process
-                                            if let Some((xid, _)) = xid_pid.iter().find(|(_, pid)| *pid == proc_pid.as_u32()) {
+                                            if let Some((xid, _)) = xid_pid
+                                                .iter()
+                                                .find(|(_, pid)| *pid == proc_pid.as_u32())
+                                            {
                                                 // Push the application and go to the next one
                                                 found_applications.push(Application {
                                                     name: app.name.clone(),
@@ -226,9 +267,17 @@ impl CommandProcessor {
                                     }
                                 }
 
-                                match websocket.lock().await.application_info(&found_applications).await {
-                                    Ok(_) => info!("[GetInfo] Command processed (applications found: {})", found_applications.len()),
-                                    Err(e) => error!("Failed to send application data: {}", e)
+                                match websocket
+                                    .lock()
+                                    .await
+                                    .application_info(&found_applications)
+                                    .await
+                                {
+                                    Ok(_) => info!(
+                                        "[GetInfo] Command processed (applications found: {})",
+                                        found_applications.len()
+                                    ),
+                                    Err(e) => error!("Failed to send application data: {}", e),
                                 }
                             }
                         }
@@ -243,30 +292,45 @@ impl CommandProcessor {
                             // Check if time to send a stream preview
                             let send_preview = if stream.is_some() {
                                 if let Some(last) = last_stream_preview {
-                                    if time::Instant::now().duration_since(last) > Duration::from_secs(10 * 60) {
+                                    if time::Instant::now().duration_since(last)
+                                        > Duration::from_secs(10 * 60)
+                                    {
                                         true
-                                    } else { false }
+                                    } else {
+                                        false
+                                    }
                                 } else {
                                     true
                                 }
-                            } else { false };
+                            } else {
+                                false
+                            };
 
                             if send_preview {
                                 let _ = last_stream_preview.insert(time::Instant::now());
                                 info!("Sending stream preview");
-                                if let Err(e) = websocket.lock().await.stream_preview(&x.take_screenshot(current_xid.unwrap()).unwrap()).await {
+                                if let Err(e) = websocket
+                                    .lock()
+                                    .await
+                                    .stream_preview(
+                                        &x.take_screenshot(current_xid.unwrap()).unwrap(),
+                                    )
+                                    .await
+                                {
                                     error!("Failed to send stream preview: {}", e);
                                 }
                             }
 
                             sleep(sleep_time).await;
                         }
-                    }
+                    },
                 }
             }
         });
 
-        CommandProcessor { thread: Some(thread) }
+        CommandProcessor {
+            thread: Some(thread),
+        }
     }
 
     /// Waits for the `CommandProcessor`'s internal thread to join.
