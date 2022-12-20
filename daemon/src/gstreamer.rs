@@ -320,6 +320,7 @@ impl GstHandle {
         //Link audio elements
         Element::link_many(&[
             &pulsesrc,
+            &audio_capsfilter,
             &audioconvert,
             &audio_encoder_queue,
             &opusenc,
