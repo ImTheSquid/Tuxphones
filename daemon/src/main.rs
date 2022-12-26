@@ -1,12 +1,9 @@
-use std::{
-    panic,
-    process,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{fs, panic, process, sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+}, time::Duration};
+use std::collections::HashMap;
+use std::str::FromStr;
 
 use tokio::{
     signal::{ctrl_c, unix::SignalKind},
@@ -17,67 +14,100 @@ use tracing::{error, info, Level};
 use tracing::level_filters::LevelFilter;
 use tracing_log::LogTracer;
 use tracing_subscriber::{filter, Layer};
+use tracing_subscriber::fmt::format;
 use tracing_subscriber::layer::SubscriberExt;
 
 use tuxphones::{CommandProcessor, socket::WebSocket};
 
 #[tokio::main]
 async fn main() {
-    // Figure out logging level
-    let mut log_level = Level::INFO;
-    let mut gst_level = 0;
-    if let Ok(level) = std::env::var("TUX_LOG") {
-        if let Ok(level) = level.parse::<u8>() {
-            log_level = match level {
-                1 => Level::WARN,
-                2 => Level::INFO,
-                3 => Level::DEBUG,
-                4 => Level::TRACE,
-                _ => Level::ERROR,
-            };
-            gst_level = level.clamp(0, 4);
+    // "TUX_LOG=category=level,category=level..."
+    // "TUX_FILE_LOG=category=level,category=level..."
+    // "TUX_FILE_PATH=/path/to/folder"
+    // TUX_FILE_PATH can include {date} and {time} which will be replaced with the current date and time and {pid} which will be replaced with the current process id
+    //Where category is one of:
+    //  - "tuxphones" for the daemon itself
+    //  - "tuxphones::websocket" for the websocket
+    //  - "tuxphones::command" for the command processor
+    //  - "tuxphones::sdp" for loading SDP
+    //And level is one of:
+    //  - 0 = disabled
+    //  - 1 = "error"
+    //  - 2 = "debug"
+    //  - 3 = "info"
+    //  - 4 = "debug"
+    //  - 5 = "trace"
+    let console_categories: HashMap<String, i8> = std::env::var("TUX_LOG")
+        .unwrap_or_else(|_| "tuxphones=3".to_string())
+        .split(',')
+        .map(|s| {
+            let mut split = s.split('=');
+            (split.next().unwrap().to_string(), split.next().unwrap().parse().unwrap())
+        })
+        .collect();
+
+    let file_categories: HashMap<String, i8> = std::env::var("TUX_FILE_LOG")
+        .unwrap_or_else(|_| "tuxphones::sdp=5".to_string())
+        .split(',')
+        .map(|s| {
+            let mut split = s.split('=');
+            (split.next().unwrap().to_string(), split.next().unwrap().parse().unwrap())
+        })
+        .collect();
+
+    let mut file_subscribers = Vec::new();
+
+    if !file_categories.is_empty() {
+        let file_path = std::env::var("TUX_FILE_PATH").unwrap_or_else(|_| "/tmp/tuxphones-{date}-{time}-{pid}".to_string());
+
+        //replace {date}, {time}, {pid} in the file path with the current date, time, process
+        let file_path = file_path
+            .replace("{date}", &chrono::Local::now().format("%Y:%m:%d").to_string())
+            .replace("{time}", &chrono::Local::now().format("%H:%M:%S").to_string())
+            .replace("{pid}", &process::id().to_string());
+
+        //Create the folder file_path and if already exist add a -1, -2, -3, etc to the end of the folder name
+        let mut file_path = std::path::PathBuf::from(file_path);
+        let mut i = 0;
+        while file_path.exists() {
+            i += 1;
+            file_path = file_path.with_file_name(format!("{}-{}", file_path.file_name().unwrap().to_str().unwrap(), i));
         }
-    }
 
-    // Only set GST_DEBUG if not set already
-    if std::env::var("GST_DEBUG").is_err() {
-        std::env::set_var("GST_DEBUG", gst_level.to_string());
-    }
+        match fs::create_dir_all(&file_path) {
+            Ok(_) => {
+                //For each file_category create a file and a tracing_subscriber for it
+                for (category, level) in file_categories {
+                    let (non_blocking, _guard) = tracing_appender::non_blocking(std::fs::File::create(format!("{}/{}.log", file_path.to_str().unwrap(), category)).unwrap());
+                    let sdp_log = tracing_subscriber::fmt::layer()
+                        .with_ansi(false)
+                        .with_writer(non_blocking)
+                        .with_target(false)
+                        .with_filter(filter::filter_fn(move |meta| {
+                            meta.target() == category && meta.level() <= &Level::from_str(&level.to_string()).unwrap()
+                        }));
 
-    //Filter to show only untargeted logs
-    let tuxphones_target_filter = filter::filter_fn(|meta| {
-        meta.target() == "tuxphones"
-    });
+                    file_subscribers.push(sdp_log);
+                }
+            }
+            Err(_) => {
+                eprintln!("Failed to create folder {}, file logging disabled", file_path.to_str().unwrap());
+            }
+        };
+    }
 
     // Stdout logging
     let stdout_log = tracing_subscriber::fmt::layer().pretty();
 
-    // Generic log file
-    let (non_blocking, _guard) = tracing_appender::non_blocking(std::fs::File::create("tux.log").unwrap());
-    let generic_log = tracing_subscriber::fmt::layer()
-        .with_ansi(false)
-        .with_writer(non_blocking)
-        .with_filter(tuxphones_target_filter.clone());
-
-    // SDP log file
-    let (non_blocking, _guard) = tracing_appender::non_blocking(std::fs::File::create("sdp.log").unwrap());
-    let sdp_log = tracing_subscriber::fmt::layer()
-        .with_ansi(false)
-        .with_writer(non_blocking)
-        .with_target(false)
-        .with_filter(filter::filter_fn(|meta| {
-            meta.target() == "sdp"
-        }));
-
     let subscriber = tracing_subscriber::registry()
         .with(stdout_log
-            .with_filter(
-                LevelFilter::from_level(log_level)
-            )
-            .with_filter(tuxphones_target_filter)
+            .with_filter(filter::filter_fn(move |meta| {
+                console_categories.get(meta.target()).map(|level| {
+                    meta.level() <= &Level::from_str(&level.to_string()).unwrap()
+                }).unwrap_or(false)
+            }))
         )
-        .with(generic_log)
-        .with(sdp_log);
+        .with(file_subscribers);
 
     match tracing::subscriber::set_global_default(subscriber) {
         Ok(_) => {}
