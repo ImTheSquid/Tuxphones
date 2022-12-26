@@ -9,7 +9,7 @@ use gst::{
 use regex::Regex;
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, event, info, trace, Level};
 use webrtcredux::sdp::{AddressType, LineEnding, MediaProp, MediaType, NetworkType, SdpProp};
 use webrtcredux::{
     RTCBundlePolicy, RTCIceGathererState, RTCIceServer, RTCSdpType,
@@ -411,6 +411,8 @@ impl GstHandle {
                         .await
                         .expect("Failed to create offer");
 
+
+                    event!(target: "tuxphones::sdp", Level::INFO, "Generated local SDP: {:#?}", offer.to_string(LineEnding::LF));
                     trace!("[WebRTC] Generated local SDP: {:#?}", offer);
 
                     redux_arc
@@ -511,18 +513,25 @@ impl GstHandle {
 
                 let sdp_truncate_rule = Regex::new(format!("^a=ice|a=extmap|opus|VP8|{} rtx", rtx_payload_type).as_str()).unwrap();
 
+                let local_sdp = local.to_string(LineEnding::LF);
+                event!(target: "tuxphones::sdp", Level::INFO, "Local SDP: {:#?}", local_sdp);
+                let local_sdp = local_sdp.split('\n').filter(|s| sdp_truncate_rule.is_match(s)).collect::<Vec<&str>>().join("\n");
+                event!(target: "tuxphones::sdp", Level::INFO, "Truncated SDP: {:#?}", local_sdp);
+
                 to_ws_tx.send(ToWs {
                     ssrcs: StreamSSRCs {
                         audio: audio_ssrc,
                         video: video_ssrc,
                         rtx: 0
                     },
-                    local_sdp: local.to_string(LineEnding::LF).split('\n').filter(|s| sdp_truncate_rule.is_match(s)).collect::<Vec<&str>>().join("\n"),
+                    local_sdp,
                     video_payload_type,
                     rtx_payload_type,
                 }).await.unwrap();
 
                 let from_ws = from_ws_rx.lock().await.recv().await.unwrap();
+
+                event!(target: "tuxphones::sdp", Level::INFO, "Remote SDP: {:#?}", from_ws.remote_sdp);
 
                 match SDP::from_str(&from_ws.remote_sdp).unwrap().props.pop().unwrap() {
                     SdpProp::Media { ports, props, .. } => {
@@ -680,7 +689,7 @@ impl GstHandle {
                             video_media
                         ]};
 
-                        trace!("[WebRTC] Generated remote SDP: {:#?}", answer);
+                        event!(target: "tuxphones::sdp", Level::INFO, "Generated SDP: {:#?}", answer.to_string(LineEnding::LF));
 
                         redux_arc.lock().await.set_remote_description(&answer, RTCSdpType::Answer).await.expect("Failed to set remote description");
 

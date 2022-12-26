@@ -11,10 +11,8 @@ use tokio::{
 };
 use tokio::sync::Mutex;
 use tracing::{error, info, Level};
-use tracing::level_filters::LevelFilter;
 use tracing_log::LogTracer;
 use tracing_subscriber::{filter, Layer};
-use tracing_subscriber::fmt::format;
 use tracing_subscriber::layer::SubscriberExt;
 
 use tuxphones::{CommandProcessor, socket::WebSocket};
