@@ -110,6 +110,7 @@ impl Drop for GstHandle {
         info!("dropping GstHandle");
         // Debug diagram
         let out = debug_bin_to_dot_data(&self.pipeline, DebugGraphDetails::ALL);
+        //TODO: Move to logs folder
         std::fs::write("/tmp/tuxphones_gstdrop.dot", out.as_str()).unwrap();
 
         if let Err(e) = self.pipeline.set_state(gst::State::Null) {
@@ -330,6 +331,7 @@ impl GstHandle {
 
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
+        //TODO: Move to logs folder
         std::fs::write("/tmp/tuxphones_gst.dot", out.as_str()).unwrap();
 
         Ok(GstHandle {

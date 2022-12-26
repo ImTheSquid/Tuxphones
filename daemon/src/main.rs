@@ -21,6 +21,57 @@ use tuxphones::{CommandProcessor, socket::WebSocket};
 
 #[tokio::main]
 async fn main() {
+    initialize_logging();
+
+    let run = Arc::new(AtomicBool::new(true));
+    let r = Arc::clone(&run);
+
+    // Ctrl+C handling
+    // match ctrlc::set_handler(move || {
+    //     info!("Interrupt!");
+    //     r.store(false, Ordering::SeqCst);
+    // }) {
+    //     Ok(_) => {},
+    //     Err(e) => {
+    //         error!("Failed to set interrupt handler! {}", e);
+    //         process::exit(1);
+    //     }
+    // }
+
+    let (sender, receiver) = mpsc::channel(1000);
+
+    let socket_watcher: Arc<Mutex<WebSocket>> = match WebSocket::new(9000, sender.clone()).await {
+        Ok(s) => Arc::new(Mutex::new(s)),
+        Err(_) => {
+            error!("Error creating socket watcher!");
+            process::exit(2);
+        }
+    };
+
+    let mut command_processor = CommandProcessor::new(
+        receiver,
+        sender.clone(),
+        Arc::clone(&run),
+        Duration::from_millis(500),
+        socket_watcher.clone(),
+    );
+
+    info!("Daemon started");
+
+    let mut sig = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
+
+    tokio::select! {
+        _ = sig.recv() => {},
+        _ = ctrl_c() => {}
+    }
+
+    r.store(false, Ordering::SeqCst);
+
+    socket_watcher.lock().await.abort().await;
+    command_processor.join().await;
+}
+
+fn initialize_logging() {
     // "TUX_LOG=category=level,category=level..."
     // "TUX_FILE_LOG=category=level,category=level..."
     // "TUX_FILE_PATH=/path/to/folder"
@@ -76,6 +127,14 @@ async fn main() {
 
         match fs::create_dir_all(&file_path) {
             Ok(_) => {
+                if std::env::var("TUX_OPEN_LOG_ON_START").unwrap_or_else(|_| "false".to_string()).parse::<bool>().unwrap() {
+                    match process::Command::new("xdg-open").arg(&file_path).spawn() {
+                        Ok(_) => {},
+                        Err(e) => {
+                            eprintln!("Failed to open folder! {}", e);
+                        }
+                    }
+                }
                 //For each file_category create a file and a tracing_subscriber for it
                 for (category, level) in file_categories {
                     let (non_blocking, _guard) = tracing_appender::non_blocking(std::fs::File::create(format!("{}/{}.log", file_path.to_str().unwrap(), category)).unwrap());
@@ -117,51 +176,4 @@ async fn main() {
     }
 
     LogTracer::init().unwrap();
-
-    let run = Arc::new(AtomicBool::new(true));
-    let r = Arc::clone(&run);
-
-    // Ctrl+C handling
-    // match ctrlc::set_handler(move || {
-    //     info!("Interrupt!");
-    //     r.store(false, Ordering::SeqCst);
-    // }) {
-    //     Ok(_) => {},
-    //     Err(e) => {
-    //         error!("Failed to set interrupt handler! {}", e);
-    //         process::exit(1);
-    //     }
-    // }
-
-    let (sender, receiver) = mpsc::channel(1000);
-
-    let socket_watcher: Arc<Mutex<WebSocket>> = match WebSocket::new(9000, sender.clone()).await {
-        Ok(s) => Arc::new(Mutex::new(s)),
-        Err(_) => {
-            error!("Error creating socket watcher!");
-            process::exit(2);
-        }
-    };
-
-    let mut command_processor = CommandProcessor::new(
-        receiver,
-        sender.clone(),
-        Arc::clone(&run),
-        Duration::from_millis(500),
-        socket_watcher.clone(),
-    );
-
-    info!("Daemon started");
-
-    let mut sig = tokio::signal::unix::signal(SignalKind::terminate()).unwrap();
-
-    tokio::select! {
-        _ = sig.recv() => {},
-        _ = ctrl_c() => {}
-    }
-
-    r.store(false, Ordering::SeqCst);
-
-    socket_watcher.lock().await.abort().await;
-    command_processor.join().await;
 }
