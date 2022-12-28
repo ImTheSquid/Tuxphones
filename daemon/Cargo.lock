@@ -1180,7 +1180,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-webrtcredux"
 version = "0.5.0"
-source = "git+https://github.com/ImTheSquid/gst-webrtcredux#f589c850d373b311b3613db46ab13b9248cae008"
+source = "git+https://github.com/ImTheSquid/gst-webrtcredux?rev=f09a7cb#f09a7cbce6788c2e8533afd7e4e026b0db776445"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1528,9 +1528,9 @@ dependencies = [
 
 [[package]]
 name = "interceptor"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ffaa4d24f546a18eaeee91f7b2c52e080e20e285e43cd7c27a527b4712cfdad"
+checksum = "1e8a11ae2da61704edada656798b61c94b35ecac2c58eb955156987d5e6be90b"
 dependencies = [
  "async-trait",
  "bytes",
@@ -2316,9 +2316,9 @@ dependencies = [
 
 [[package]]
 name = "rtcp"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c11171e7e37998dcf54a9e9d4a6e2e1932c994424c7d39bc6349fed1424c45c3"
+checksum = "1919efd6d4a6a85d13388f9487549bb8e359f17198cc03ffd72f79b553873691"
 dependencies = [
  "bytes",
  "thiserror",

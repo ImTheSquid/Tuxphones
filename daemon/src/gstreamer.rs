@@ -360,7 +360,6 @@ impl GstHandle {
 
                 Box::pin(async {})
             }))
-            .await
             .expect("Failed to set on peer connection state change");
 
         self.webrtcredux
@@ -562,8 +561,8 @@ impl GstHandle {
                             net_type: NetworkType::Internet,
                             address_type: AddressType::IPv4,
                             address: main_ip.unwrap(),
-                            ttl: Some(127),
-                            num_addresses: Some(1),
+                            ttl: None,
+                            num_addresses: None,
                             suffix: None,
                         };
 
@@ -584,6 +583,10 @@ impl GstHandle {
                             MediaProp::Attribute {
                                 key: "setup".to_string(),
                                 value: Some("passive".to_string())
+                            },
+                            MediaProp::Attribute { 
+                                key: "recvonly".to_string(), 
+                                value: None 
                             }
                         ];
 
@@ -633,7 +636,7 @@ impl GstHandle {
                         let audio_vec_attrs = vec![
                             MediaProp::Attribute {
                                 key: "fmtp".to_string(),
-                                value: Some("111 minptime=10;useinbandfec=1".to_string())
+                                value: Some("111 minptime=10;useinbandfec=1;usedtx=0".to_string())
                             },
                             MediaProp::Attribute {
                                 key: "maxptime".to_string(),
