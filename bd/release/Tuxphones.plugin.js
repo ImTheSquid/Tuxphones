@@ -85,7 +85,8 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
   const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
   const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
   const GoLiveModal = BdApi.Webpack.getModule((m) => m.default?.toString().includes("GO_LIVE_MODAL"));
-  const GetDesktopSourcesMod = BdApi.Webpack.getModule((m) => Object.values(m).filter((v) => v).some((v) => v.SCREEN && v.WINDOW));
+  const DesktopSourcesChecker = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("installedLogHooks")).prototype;
+  const GetDesktopSources = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byStrings("Can't get desktop sources outside of native app"), { defaultExport: false });
   function getFunctionNameFromString(obj, search) {
     for (const [k, v] of Object.entries(obj)) {
       if (search.every((str) => v?.toString().match(str))) {
@@ -102,7 +103,10 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         BdApi.showConfirmationModal("Tuxphones Daemon Error", [
           "The Tuxphones daemon was not detected.\n",
           "If you don't know what this means or installed just the plugin and not the daemon, get help installing the daemon by going to the GitHub page:",
-          /* @__PURE__ */ React.createElement("a", { href: "https://github.com/ImTheSquid/Tuxphones", target: "_blank" }, "Tuxphones Github"),
+          /* @__PURE__ */ React.createElement("a", {
+            href: "https://github.com/ImTheSquid/Tuxphones",
+            target: "_blank"
+          }, "Tuxphones Github"),
           " \n",
           `If you're sure you already installed the daemon, make sure it's running then click "Reload Discord".`
         ], {
@@ -195,7 +199,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         }
       });
       this.observer.observe(document.querySelector("div > [class^=layerContainer]"), { childList: true, subtree: true });
-      Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
+      Patcher.after(GetDesktopSources, getFunctionNameFromString(GetDesktopSources, [/getDesktopCaptureSources/]), (_, __, ret) => {
         return ret.then((vals) => new Promise((res) => {
           const f = function dispatch(e) {
             Dispatcher.unsubscribe("TUX_APPS", dispatch);
@@ -225,7 +229,9 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         if (ret.props.children.props.children[2].props.children[1].props.activeSlide == 2) {
           if (ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props.selectedSource.sound) {
             this.showTuxOk = true;
-            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", { style: { "margin-right": "8px" } }, React.createElement(ButtonData, {
+            ret.props.children.props.children[2].props.children[2].props.children[0] = /* @__PURE__ */ React.createElement("div", {
+              style: { "margin-right": "8px" }
+            }, React.createElement(ButtonData, {
               onClick: () => {
                 const streamInfo = ret.props.children.props.children[2].props.children[1].props.children[2].props.children.props.children.props;
                 this.currentSoundProfile = streamInfo.selectedSource.sound;
@@ -243,12 +249,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     }
     createStream(guild_id, channel_id) {
       this.interceptNextStreamServerUpdate = true;
-      WebSocketControl.streamCreate(
-        guild_id === null ? "call" : "guild",
-        guild_id,
-        channel_id,
-        null
-      );
+      WebSocketControl.streamCreate(guild_id === null ? "call" : "guild", guild_id, channel_id, null);
     }
     parseData(msg) {
       let obj = JSON.parse(msg.data);

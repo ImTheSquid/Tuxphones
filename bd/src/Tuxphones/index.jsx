@@ -11,7 +11,8 @@ const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
 //const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect);
 const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
 const GoLiveModal = BdApi.Webpack.getModule(m => m.default?.toString().includes("GO_LIVE_MODAL"));
-const GetDesktopSourcesMod = BdApi.Webpack.getModule(m => Object.values(m).filter(v => v).some(v => v.SCREEN && v.WINDOW));
+const DesktopSourcesChecker = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("installedLogHooks")).prototype;
+const GetDesktopSources = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byStrings("Can't get desktop sources outside of native app"), {defaultExport: false});
 
 function getFunctionNameFromString(obj, search) {
     for (const [k, v] of Object.entries(obj)) {
@@ -139,7 +140,7 @@ return class extends Plugin {
         this.observer.observe(document.querySelector("div > [class^=layerContainer]"), {childList: true, subtree: true});
 
         // Add extra info to desktop sources list
-        Patcher.after(GetDesktopSourcesMod, getFunctionNameFromString(GetDesktopSourcesMod, [/getDesktopCaptureSources/]), (_, __, ret) => {
+        Patcher.after(GetDesktopSources, getFunctionNameFromString(GetDesktopSources, [/getDesktopCaptureSources/]), (_, __, ret) => {
             return ret.then(vals => new Promise(res => {
                 const f = function dispatch(e) {
                     Dispatcher.unsubscribe('TUX_APPS', dispatch);
