@@ -10,27 +10,27 @@ repository = "https://github.com/ImTheSquid/Tuxphones"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-libpulse-binding = "2.26.0"
-gst = { package = "gstreamer", version = "0.19.3" }
-once_cell = "1.16.0"
+libpulse-binding = "2.27.1"
+gst = { package = "gstreamer", version = "0.19.8" }
+once_cell = "1.17.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-ctrlc={ version = "3.2.3", features = ["termination"] }
-xcb = { version = "1.2.0", features = ["res"] }
-sysinfo = "0.26.8"
+ctrlc={ version = "3.2.5", features = ["termination"] }
+xcb = { version = "1.2.1", features = ["res"] }
+sysinfo = "0.26.9"
 tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
+tracing-subscriber = "0.3.17"
 async-tungstenite = {version = "0.18.0", features = ["tokio-native-tls", "tokio-runtime"] }
-futures-util = "0.3.25"
-regex = "1.7.0"
+futures-util = "0.3.28"
+regex = "1.8.1"
 lazy_static = "1.4.0"
 rand = "0.8.5"
-image = "0.24.5"
+image = "0.24.6"
 base64 = "0.13.1"
 gst-plugin-webrtcredux = { git="https://github.com/ImTheSquid/gst-webrtcredux", rev="f09a7cb" }
-tokio = "1.22.0"
-tokio-native-tls = "0.3.0"
+tokio = "1.28.0"
+tokio-native-tls = "0.3.1"
 tracing-log = "0.1.3"
 tracing-appender = "0.2.2"
-chrono = "0.4.23"
-gst-plugin-ximageredux = "0.1.4"
+chrono = "0.4.24"
+gst-plugin-ximageredux = "0.1.6"

@@ -1,6 +1,6 @@
 module.exports = (Plugin, Library) => {
 const {Logger, Patcher, WebpackModules, DiscordModules, ContextMenu} = Library;
-const { Dispatcher, SelectedChannelStore, ButtonData } = DiscordModules;
+const { Dispatcher, SelectedChannelStore, ButtonData, UserStore } = DiscordModules;
 const React = BdApi.React;
 
 // Useful modules maybe: ApplicationStreamingSettingsStore, ApplicationStreamingStore
@@ -11,7 +11,7 @@ const ChunkedRequests = BdApi.findModuleByProps("makeChunkedRequest");
 //const RTCControlSocket = BdApi.Webpack.getModule(m => m.Z?.prototype?.connect);
 const WebSocketControl = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("lastTimeConnectedChanged")).getSocket();
 const GoLiveModal = BdApi.Webpack.getModule(m => m.default?.toString().includes("GO_LIVE_MODAL"));
-const DesktopSourcesChecker = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("installedLogHooks")).prototype;
+// const DesktopSourcesChecker = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byProps("installedLogHooks")).prototype;
 const GetDesktopSources = BdApi.Webpack.getModule(BdApi.Webpack.Filters.byStrings("Can't get desktop sources outside of native app"), {defaultExport: false});
 
 function getFunctionNameFromString(obj, search) {
@@ -52,55 +52,124 @@ return class extends Plugin {
         this.selectedFPS = null;
         this.selectedResolution = null;
         this.serverId = null;
+
+        this.wsOnMessage = this.wsOnMessage.bind(this);
+        this._onmessage = null;
+        this._ws = null;
     }
 
     onOpen() {
+        Patcher.before(WebSocket.prototype, 'send', (that, args) => {
+            const arg = args[0];
+            if (typeof(arg) !== 'string' || !that.url.includes('discord') || (this._ws && this._ws !== that)) return;
+
+            const json = JSON.parse(arg);
+
+            console.log('%cWS SEND FRAME ================================', 'color: green; font-size: large; margin-top: 20px;');
+
+            // Check if stream has started, if so then hook onmessage
+            if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === 'video' && json.d.user_id === UserStore.getCurrentUser().id) {
+                console.log('%cHOOKING SOCKET', 'color: blue; font-size: xx-large;');
+                if (this._ws) {
+                    this.resetVars();
+                }
+                this._ws = that;
+                this._onmessage = that.onmessage;
+                that.onmessage = this.wsOnMessage;
+                // this.token = json.d.token;
+            } else if (json.op == 1) {
+                json.d.data.mode = 'xsalsa20_poly1305_lite';
+                json.d.mode = 'xsalsa20_poly1305_lite';
+                args[0] = JSON.stringify(json);
+            }
+            // else if (json.op === 12 && json.d.video_ssrc !== 0 && json.d.rtx_ssrc !== 0) {
+            //     console.log('%cRECEIVED SSRC INFORMATION', 'color: aqua; font-size: xx-large;');
+            //     Logger.log('Video SSRC:');
+            //     Logger.log(json.d.video_ssrc);
+            //     Logger.log('RTX SSRC:');
+            //     Logger.log(json.d.rtx_ssrc);
+
+            //     this.ssrc = json.d.video_ssrc;
+            //     const res = json.d.streams[0].max_resolution;
+            //     this.resolution = {
+            //         width: res.width,
+            //         height: res.height,
+            //         is_fixed: res.type === 'fixed'
+            //     };
+            // }
+
+            Logger.log(json);
+            console.log('%cWS END SEND FRAME ============================', 'color: green; font-size: large; margin-bottom: 20px;');
+        });
+
+        Patcher.before(WebSocket.prototype, 'close', (that, [arg]) => {
+            Logger.log('TUXPHONES CLOSE!');
+            Logger.log(that);
+            Logger.log(arg);
+            if (this._ws === that) {
+                console.log('%cSCREENSHARE CLOSED! Unlocking log...', 'color: red; font-size: x-large;');
+                if (this._ws) {
+                   this.resetVars();
+                }
+            }
+        });
+
         Patcher.instead(Dispatcher, 'dispatch', (_, [arg], original) => {
             if (this.interceptNextStreamServerUpdate && arg.type === 'STREAM_SERVER_UPDATE') {
+                Logger.log("STREAM SERVER UPDATE INTERCEPTED");
                 Logger.log(arg)
-                let res = null;
-                switch (this.selectedResolution) {
-                    case 720: res = {
-                        width: 1280,
-                        height: 720,
-                        is_fixed: true
-                    };
-                        break;
-                    case 1080: res = {
-                        width: 1920,
-                        height: 1080,
-                        is_fixed: true
-                    };
-                        break;
-                    default: res = {
-                        width: 0,
-                        height: 0,
-                        is_fixed: false
-                    };
-                        break;
-                }
+                // let res = null;
+                // switch (this.selectedResolution) {
+                //     case 720: res = {
+                //         width: 1280,
+                //         height: 720,
+                //         is_fixed: true
+                //     };
+                //         break;
+                //     case 1080: res = {
+                //         width: 1920,
+                //         height: 1080,
+                //         is_fixed: true
+                //     };
+                //         break;
+                //     default: res = {
+                //         width: 0,
+                //         height: 0,
+                //         is_fixed: false
+                //     };
+                //         break;
+                // }
 
-                this.streamKey = arg.streamKey;
+                if (arg.streamKey) {
+                    this.streamKey = arg.streamKey;
+                }
                 WebSocketControl.streamSetPaused(this.streamKey, false);
                 Logger.log(this.streamKey)
 
-                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
+                // this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
                 return new Promise(res => res());
             } else if (this.currentSoundProfile) {
                 // Hide the stream's existence from Discord until ready to test Tuxphones/Discord interaction
                 switch (arg.type) {
                     case 'STREAM_CREATE':
+                        Logger.log("SOUND SC PROFILE");
+                        Logger.log(arg);
                         this.serverId = arg.rtcServerId;
                         return new Promise(res => res());
                     case 'STREAM_UPDATE':
+                        Logger.log("SOUND SU PROFILE");
+                        Logger.log(arg);
                         // this.streamKey = arg.streamKey;
                         return new Promise(res => res());
                     case 'VOICE_STATE_UPDATES':
+                        Logger.log("SOUND VSU PROFILE");
+                        Logger.log(arg);
                         arg.voiceStates[0].selfStream = false;
                         break;
                 }
             } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
-                Logger.log(arg)
+                Logger.log("STREAM CREATE OR UPDATE");
+                Logger.log(arg);
             }else {
                 // Logger.log(arg)
             }
@@ -177,6 +246,62 @@ return class extends Plugin {
         // });
     }
 
+    wsOnMessage(m) {
+        this._onmessage(m);
+
+        const json = JSON.parse(m.data);
+
+        console.log('%cWS RECV FRAME ================================', 'color: orange; font-size: large; margin-top: 20px;');
+
+        if (json.op === 4) {
+            console.log('%cRECEIVED CODEC AND ENCRYPTION INFORMATION', 'color: aqua; font-size: xx-large;');
+            Logger.log('Audio Codec:');
+            Logger.log(json.d.audio_codec);
+            Logger.log('Encryption Mode:');
+            Logger.log(json.d.mode);
+            Logger.log('Secret key:');
+            Logger.log(json.d.secret_key);
+
+            let res = null;
+            switch (this.selectedResolution) {
+                case 720: res = {
+                    width: 1280,
+                    height: 720,
+                    is_fixed: true
+                };
+                    break;
+                case 1080: res = {
+                    width: 1920,
+                    height: 1080,
+                    is_fixed: true
+                };
+                    break;
+                default: res = {
+                    width: 0,
+                    height: 0,
+                    is_fixed: false
+                };
+                    break;
+            }
+
+            this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.ip, this.port, json.d.secret_key, this.base_ssrc);
+        } else if (json.op == 2) {
+            this.base_ssrc = json.d.ssrc;
+            this.ip = json.d.ip;
+            this.port = json.d.port;
+        }
+
+        Logger.log(json);
+
+        console.log('%cWS END RECV FRAME ============================', 'color: orange; font-size: large; margin-bottom: 20px;');
+    }
+
+    resetVars() {
+        this._ws.onmessage = this._onmessage;
+        this._ws = null;
+        this._onmessage = null;
+    }
+
     patchGoLive(m) {
         Patcher.after(m, 'default', (_, __, ret) => {
             Logger.log(ret)
@@ -240,25 +365,22 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    startStream(pid, xid, resolution, framerate, server_id, token, endpoint) {
+    startStream(pid, xid, resolution, framerate, ip, port, secret_key, base_ssrc) {
         this.webSocket.send(JSON.stringify({
             type: 'StartStream',
             pid: pid,
             xid: xid,
             resolution: resolution,
             framerate: framerate,
-            server_id: server_id,
-            user_id: AuthenticationStore.getId(),
-            token: token,
-            session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
+            // server_id: server_id,
+            // user_id: AuthenticationStore.getId(),
+            // token: token,
+            // session_id: AuthenticationStore.getSessionId(), // getSessionId [no], getMediaSessionId [no], getRemoteSessionId [no], getActiveMediaSessionId [no]
             rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
-            endpoint: endpoint,
-            ice: {
-                type: "IceData",
-                urls: ['stun:global.stun.twilio.com:3478?transport=udp', 'turn:global.turn.twilio.com:3478?transport=tcp', 'turn:global.turn.twilio.com:3478?transport=udp'],
-                username: '4aac1e53ade1a5473f8b5da67be3b591113cad11a9c75f957537026f628111fa',
-                credential: 'dyH2YPGFDI8rgDcaAl73jJOR7ga/st4/YpNxsVJ498A='
-            }
+            secret_key: secret_key,
+            base_ssrc: base_ssrc,
+            ip: ip,
+            port: port,
         }));
     }
 
@@ -277,6 +399,9 @@ return class extends Plugin {
 
     onStop() {
         this.webSocket.close();
+        if (this._ws) {
+            this.resetVars();
+        }
         Patcher.unpatchAll();
         if (this.observer)
             this.observer.disconnect();

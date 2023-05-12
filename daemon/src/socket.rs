@@ -64,20 +64,14 @@ pub enum SocketListenerCommand {
         resolution: StreamResolutionInformation,
         /// Target framerate
         framerate: u8,
-        /// Server ID
-        server_id: String,
-        /// User ID
-        user_id: String,
-        /// Voice access token
-        token: String,
-        /// Session ID
-        session_id: String,
         /// RTC Connection ID
         rtc_connection_id: String,
-        /// Target endpoint
-        endpoint: String,
-        /// ICE Data
-        ice: Box<IceData>,
+        /// Secret key for Sodium encryption
+        secret_key: Vec<u8>,
+        /// The base SSRC for creating a stream, needs to be offset to get video (+1) and RTX (+2) SSRCs
+        base_ssrc: u32,
+        ip: String,
+        port: u16,
     },
     /// Stops the currently-running stream
     StopStream,
