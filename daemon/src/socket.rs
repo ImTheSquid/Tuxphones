@@ -162,7 +162,7 @@ impl WebSocket {
                 Ok(()) => {}
                 Err(e) => match e {
                     Error::ConnectionClosed => {
-                        to_remove.push(addr.clone());
+                        to_remove.push(*addr);
                     }
                     _ => return Err(e),
                 },

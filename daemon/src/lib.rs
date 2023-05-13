@@ -16,19 +16,16 @@ use x::XServerHandle;
 use u32 as pid;
 use u32 as xid;
 
-use crate::discord::websocket::{ToGst, WebsocketConnection};
-use crate::gstreamer::{GstHandle, H264Settings, ToWs, VideoEncoderType};
+use crate::gstreamer::{GstHandle, H264Settings, VideoEncoderType};
 
 use tokio::{
     sync::{
-        mpsc::{self, channel, Receiver, Sender},
+        mpsc::{self, Receiver},
         Mutex,
     },
     time::sleep,
 };
 
-mod discord;
-mod discord_op;
 mod gstreamer;
 mod pulse;
 pub mod socket;
@@ -40,8 +37,7 @@ pub struct CommandProcessor {
 
 impl CommandProcessor {
     pub fn new(
-        mut receiver: mpsc::Receiver<SocketListenerCommand>,
-        ws_sender: mpsc::Sender<SocketListenerCommand>,
+        mut receiver: Receiver<SocketListenerCommand>,
         run: Arc<AtomicBool>,
         sleep_time: Duration,
         websocket: Arc<Mutex<WebSocket>>,
@@ -70,13 +66,11 @@ impl CommandProcessor {
 
             let mut gst_is_loaded = false;
 
-            let mut ws: Option<WebsocketConnection> = None;
             let mut stream = None;
 
             loop {
                 if !run.load(Ordering::SeqCst) {
                     // Kill websocket if still running
-                    ws.take();
                     stream.take();
                     current_xid.take();
                     if gst_is_loaded {
@@ -96,13 +90,11 @@ impl CommandProcessor {
                                 xid,
                                 resolution,
                                 framerate,
-                                server_id,
-                                user_id,
-                                token,
-                                session_id,
                                 rtc_connection_id,
-                                endpoint,
-                                ice,
+                                secret_key,
+                                base_ssrc,
+                                ip,
+                                port,
                             } => {
                                 info!("[StartStream] Command received");
                                 match pulse.setup_audio_capture(None) {
@@ -123,11 +115,6 @@ impl CommandProcessor {
 
                                 let _ = current_xid.insert(xid);
 
-                                let (to_ws_tx, from_gst_rx): (Sender<ToWs>, Receiver<ToWs>) =
-                                    channel(10);
-                                let (to_gst_tx, from_ws_rx): (Sender<ToGst>, Receiver<ToGst>) =
-                                    channel(10);
-
                                 // Quick and drity check to try to detect Nvidia drivers
                                 // TODO: Find a better way to do this
                                 //let nvidia_encoder = if let Ok(out) = Command::new("lspci").arg("-nnk").output() {
@@ -146,37 +133,14 @@ impl CommandProcessor {
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
-                                    *ice,
                                 )
                                 .await
                                 .expect("Failed to initialize gstreamer pipeline");
-                                gst.start(to_ws_tx, from_ws_rx)
+                                gst.start()
                                     .await
                                     .expect("Failed to start stream");
 
                                 let _ = stream.insert(gst);
-
-                                ws = match WebsocketConnection::new(
-                                    endpoint,
-                                    framerate,
-                                    resolution,
-                                    rtc_connection_id,
-                                    server_id,
-                                    session_id,
-                                    token,
-                                    user_id,
-                                    from_gst_rx,
-                                    to_gst_tx,
-                                    ws_sender.clone(),
-                                )
-                                .await
-                                {
-                                    Ok(ws_handle) => Some(ws_handle),
-                                    Err(e) => {
-                                        error!("Failed to create websocket connection: {:?}", e);
-                                        continue;
-                                    }
-                                };
 
                                 info!("[StartStream] Command processed (stream started)");
                             }
@@ -184,8 +148,7 @@ impl CommandProcessor {
                             | SocketListenerCommand::StopStreamInternal => {
                                 info!("[StopStream] Command received");
 
-                                // Kill gstreamer and ws
-                                ws.take();
+                                // Kill gstreamer
                                 stream.take();
 
                                 pulse.stop_capture();
@@ -292,13 +255,7 @@ impl CommandProcessor {
                             // Check if time to send a stream preview
                             let send_preview = if stream.is_some() {
                                 if let Some(last) = last_stream_preview {
-                                    if time::Instant::now().duration_since(last)
-                                        > Duration::from_secs(10 * 60)
-                                    {
-                                        true
-                                    } else {
-                                        false
-                                    }
+                                    time::Instant::now().duration_since(last) > Duration::from_secs(10 * 60)
                                 } else {
                                     true
                                 }

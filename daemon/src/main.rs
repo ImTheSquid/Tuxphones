@@ -3,7 +3,6 @@ use std::{fs, panic, process, sync::{
     atomic::{AtomicBool, Ordering},
 }, time::Duration};
 use std::collections::HashMap;
-use std::io::Write;
 use std::str::FromStr;
 
 use tokio::{
@@ -14,7 +13,6 @@ use tokio::sync::Mutex;
 use tracing::{error, info, Level};
 use tracing_log::LogTracer;
 use tracing_subscriber::{filter, Layer};
-use tracing_subscriber::filter::FilterExt;
 use tracing_subscriber::layer::SubscriberExt;
 
 use tuxphones::{CommandProcessor, socket::WebSocket};
@@ -50,7 +48,6 @@ async fn main() {
 
     let mut command_processor = CommandProcessor::new(
         receiver,
-        sender.clone(),
         Arc::clone(&run),
         Duration::from_millis(500),
         socket_watcher.clone(),
@@ -137,7 +134,7 @@ fn initialize_logging() {
                 }
                 //For each file_category create a file and a tracing_subscriber for it
                 for (category, level) in file_categories {
-                    let file = std::fs::File::create(format!("{}/{}.log", file_path.to_str().unwrap(), category)).unwrap();
+                    let file = fs::File::create(format!("{}/{}.log", file_path.to_str().unwrap(), category)).unwrap();
                     //TODO: Figure out why the non_blocking wrapper doesn't work
                     //let (non_blocking, _guard) = tracing_appender::non_blocking(file);
                     let sdp_log = tracing_subscriber::fmt::layer()

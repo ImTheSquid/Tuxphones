@@ -35,7 +35,6 @@ impl XServerHandle {
         system.refresh_processes();
         let xorg_procs = system
             .processes_by_name("Xorg")
-            .into_iter()
             .map(|p| p.pid().as_u32())
             .collect();
 
@@ -88,7 +87,7 @@ impl XServerHandle {
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
 
-        let mut image: ImageBuffer<image::Rgba<u8>, _> = image::ImageBuffer::from_raw(
+        let mut image: ImageBuffer<image::Rgba<u8>, _> = ImageBuffer::from_raw(
             size.width.into(),
             size.height.into(),
             reply.data().to_owned(),
