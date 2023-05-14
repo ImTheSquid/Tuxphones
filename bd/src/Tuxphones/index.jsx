@@ -145,6 +145,7 @@ return class extends Plugin {
                 }
                 WebSocketControl.streamSetPaused(this.streamKey, false);
                 Logger.log(this.streamKey)
+                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.base_ssrc);
 
                 // this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
                 return new Promise(res => res());
@@ -261,30 +262,7 @@ return class extends Plugin {
             Logger.log(json.d.mode);
             Logger.log('Secret key:');
             Logger.log(json.d.secret_key);
-
-            let res = null;
-            switch (this.selectedResolution) {
-                case 720: res = {
-                    width: 1280,
-                    height: 720,
-                    is_fixed: true
-                };
-                    break;
-                case 1080: res = {
-                    width: 1920,
-                    height: 1080,
-                    is_fixed: true
-                };
-                    break;
-                default: res = {
-                    width: 0,
-                    height: 0,
-                    is_fixed: false
-                };
-                    break;
-            }
-
-            this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.ip, this.port, json.d.secret_key, this.base_ssrc);
+            this.secret_key = json.d.secret_key;
         } else if (json.op == 2) {
             this.base_ssrc = json.d.ssrc;
             this.ip = json.d.ip;
@@ -316,6 +294,7 @@ return class extends Plugin {
                                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                                 this.selectedFPS = streamInfo.selectedFPS;
                                 this.selectedResolution = streamInfo.selectedResolution;
+                                Logger.log("Creating Sound Stream");
                                 this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
                             },
                             size: ButtonData.Sizes.SMALL
@@ -365,7 +344,29 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    startStream(pid, xid, resolution, framerate, ip, port, secret_key, base_ssrc) {
+    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, base_ssrc) {
+        let resolution = null;
+        switch (selectedResolution) {
+            case 720: resolution = {
+                width: 1280,
+                height: 720,
+                is_fixed: true
+            };
+                break;
+            case 1080: resolution = {
+                width: 1920,
+                height: 1080,
+                is_fixed: true
+            };
+                break;
+            default: resolution = {
+                width: 0,
+                height: 0,
+                is_fixed: false
+            };
+                break;
+        }
+
         this.webSocket.send(JSON.stringify({
             type: 'StartStream',
             pid: pid,

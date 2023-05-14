@@ -129,10 +129,10 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
     }
     onOpen() {
       Patcher.before(WebSocket.prototype, "send", (that, args) => {
-        const arg2 = args[0];
-        if (typeof arg2 !== "string" || !that.url.includes("discord") || this._ws && this._ws !== that)
+        const arg = args[0];
+        if (typeof arg !== "string" || !that.url.includes("discord") || this._ws && this._ws !== that)
           return;
-        const json = JSON.parse(arg2);
+        const json = JSON.parse(arg);
         console.log("%cWS SEND FRAME ================================", "color: green; font-size: large; margin-top: 20px;");
         if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === "video" && json.d.user_id === UserStore.getCurrentUser().id) {
           console.log("%cHOOKING SOCKET", "color: blue; font-size: xx-large;");
@@ -150,10 +150,10 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log(json);
         console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
       });
-      Patcher.before(WebSocket.prototype, "close", (that, [arg2]) => {
+      Patcher.before(WebSocket.prototype, "close", (that, [arg]) => {
         Logger.log("TUXPHONES CLOSE!");
         Logger.log(that);
-        Logger.log(arg2);
+        Logger.log(arg);
         if (this._ws === that) {
           console.log("%cSCREENSHARE CLOSED! Unlocking log...", "color: red; font-size: x-large;");
           if (this._ws) {
@@ -161,39 +161,40 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
         }
       });
-      Patcher.instead(Dispatcher, "dispatch", (_, [arg2], original) => {
-        if (this.interceptNextStreamServerUpdate && arg2.type === "STREAM_SERVER_UPDATE") {
+      Patcher.instead(Dispatcher, "dispatch", (_, [arg], original) => {
+        if (this.interceptNextStreamServerUpdate && arg.type === "STREAM_SERVER_UPDATE") {
           Logger.log("STREAM SERVER UPDATE INTERCEPTED");
-          Logger.log(arg2);
-          if (arg2.streamKey) {
-            this.streamKey = arg2.streamKey;
+          Logger.log(arg);
+          if (arg.streamKey) {
+            this.streamKey = arg.streamKey;
           }
           WebSocketControl.streamSetPaused(this.streamKey, false);
           Logger.log(this.streamKey);
+          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.base_ssrc);
           return new Promise((res) => res());
         } else if (this.currentSoundProfile) {
-          switch (arg2.type) {
+          switch (arg.type) {
             case "STREAM_CREATE":
               Logger.log("SOUND SC PROFILE");
-              Logger.log(arg2);
-              this.serverId = arg2.rtcServerId;
+              Logger.log(arg);
+              this.serverId = arg.rtcServerId;
               return new Promise((res) => res());
             case "STREAM_UPDATE":
               Logger.log("SOUND SU PROFILE");
-              Logger.log(arg2);
+              Logger.log(arg);
               return new Promise((res) => res());
             case "VOICE_STATE_UPDATES":
               Logger.log("SOUND VSU PROFILE");
-              Logger.log(arg2);
-              arg2.voiceStates[0].selfStream = false;
+              Logger.log(arg);
+              arg.voiceStates[0].selfStream = false;
               break;
           }
-        } else if (arg2.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
+        } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
           Logger.log("STREAM CREATE OR UPDATE");
-          Logger.log(arg2);
+          Logger.log(arg);
         } else {
         }
-        return original(arg2);
+        return original(arg);
       });
       this.showTuxOk = false;
       if (GoLiveModal)
@@ -255,31 +256,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log(json.d.mode);
         Logger.log("Secret key:");
         Logger.log(json.d.secret_key);
-        let res = null;
-        switch (this.selectedResolution) {
-          case 720:
-            res = {
-              width: 1280,
-              height: 720,
-              is_fixed: true
-            };
-            break;
-          case 1080:
-            res = {
-              width: 1920,
-              height: 1080,
-              is_fixed: true
-            };
-            break;
-          default:
-            res = {
-              width: 0,
-              height: 0,
-              is_fixed: false
-            };
-            break;
-        }
-        this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, this.token, arg.endpoint);
+        this.secret_key = json.d.secret_key;
       } else if (json.op == 2) {
         this.base_ssrc = json.d.ssrc;
         this.ip = json.d.ip;
@@ -307,6 +284,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
                 this.currentSoundProfile = streamInfo.selectedSource.sound;
                 this.selectedFPS = streamInfo.selectedFPS;
                 this.selectedResolution = streamInfo.selectedResolution;
+                Logger.log("Creating Sound Stream");
                 this.createStream(streamInfo.guildId, SelectedChannelStore.getVoiceChannelId());
               },
               size: ButtonData.Sizes.SMALL
@@ -344,7 +322,31 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           Logger.err(`Received unknown command type: ${obj.type}`);
       }
     }
-    startStream(pid, xid, resolution, framerate, ip, port, secret_key, base_ssrc) {
+    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, base_ssrc) {
+      let resolution = null;
+      switch (selectedResolution) {
+        case 720:
+          resolution = {
+            width: 1280,
+            height: 720,
+            is_fixed: true
+          };
+          break;
+        case 1080:
+          resolution = {
+            width: 1920,
+            height: 1080,
+            is_fixed: true
+          };
+          break;
+        default:
+          resolution = {
+            width: 0,
+            height: 0,
+            is_fixed: false
+          };
+          break;
+      }
       this.webSocket.send(JSON.stringify({
         type: "StartStream",
         pid,
