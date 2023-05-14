@@ -109,23 +109,19 @@ impl GstHandle {
         //Creating a capsfilter to set the resolution and the fps
         let capsfilter = gst::ElementFactory::make("capsfilter").build()?;
 
-        let fps_frac = gst::Fraction::new(fps, 1);
-
-        //Create a vector containing the option of the gst caps
-        let mut caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> =
-            vec![("framerate", &fps_frac)];
+        let mut cap = gst::Caps::builder("video/x-raw")
+            .field("frame_rate", gst::Fraction::new(fps, 1));
 
         //If the resolution is specified, add it to the caps
-        let width = resolution.width as i32;
-        let height = resolution.height as i32;
         if resolution.is_fixed {
-            caps_options.push(("width", &width));
-            caps_options.push(("height", &height));
+            cap = cap
+                .field("width", resolution.width as i32)
+                .field("height", resolution.height as i32);
         };
 
         capsfilter.set_property(
             "caps",
-            &gst::Caps::new_simple("video/x-raw", caps_options.as_ref()),
+            &cap.build(),
         );
 
         // ximagesrc.set_property_from_str("show-pointer", "1");
@@ -189,13 +185,13 @@ impl GstHandle {
         // Caps filter for audio from conversion to encoding
         let audio_capsfilter = gst::ElementFactory::make("capsfilter").build()?;
 
-        //Create a vector containing the option of the gst caps
-        let caps_options: Vec<(&str, &(dyn ToSendValue + Sync))> =
-            vec![("channels", &2), ("rate", &48000)];
+        let cap = gst::Caps::builder("audio/x-raw")
+            .field("channels", 2)
+            .field("rate", 48000);
 
         audio_capsfilter.set_property(
             "caps",
-            &gst::Caps::new_simple("audio/x-raw", caps_options.as_ref()),
+            &cap.build(),
         );
 
         //Create a new pulsesrc to get audio from the PulseAudio server
