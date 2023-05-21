@@ -133,6 +133,9 @@ impl CommandProcessor {
                                     xid,
                                     resolution.clone(),
                                     framerate.into(),
+                                    secret_key,
+                                    base_ssrc,
+                                    format!("{}:{}", ip, port),
                                 )
                                 .await
                                 .expect("Failed to initialize gstreamer pipeline");

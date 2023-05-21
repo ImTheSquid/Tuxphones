@@ -1,9 +1,13 @@
+use discordstreamer::discordstreamer::DiscordStreamer;
 use gst::prelude::*;
 use gst::{
     debug_bin_to_dot_data, glib, DebugGraphDetails, Element, PadLinkError, StateChangeError,
     StateChangeSuccess,
 };
-use tracing::{error, info};
+use gst::subclass::prelude::ObjectSubclassIsExt;
+use image::EncodableLayout;
+use tracing::{debug, error, info, trace};
+use tracing_log::log::Level;
 
 use crate::{
     socket::{StreamResolutionInformation},
@@ -93,6 +97,9 @@ impl GstHandle {
         xid: xid,
         resolution: StreamResolutionInformation,
         fps: i32,
+        secret_key: Vec<u8>,
+        base_ssrc: u32,
+        address: String,
     ) -> Result<Self, GstInitializationError> {
         info!("Creating new GstHandle");
         //Create a new GStreamer pipeline
@@ -207,7 +214,20 @@ impl GstHandle {
         opusenc.set_property("inband-fec", true);
         opusenc.set_property("packet-loss-percentage", 50);
 
-        //TODO: --DESTINATION--
+        //DESTINATION
+        let discord_streamer = DiscordStreamer::default();
+        let video_ssrc = base_ssrc;
+        let audio_ssrc = base_ssrc + 1;
+        discord_streamer.set_property("crypto-key", glib::Bytes::from(secret_key.as_bytes()));
+        discord_streamer.set_property("address", address.to_value());
+        discord_streamer.set_property("video-ssrc", video_ssrc.to_value());
+        discord_streamer.set_property("audio-ssrc", audio_ssrc.to_value());
+        debug!("DiscordStreamer created");
+        trace!("DiscordStreamer address: {:?}", address);
+        trace!("DiscordStreamer video-ssrc: {:?}", base_ssrc);
+        trace!("DiscordStreamer audio-ssrc: {:?}", base_ssrc+1);
+        trace!("DiscordStreamer crypto-key: {:?}", secret_key);
+
 
         //queues
         let video_encoder_queue = gst::ElementFactory::make("queue").build()?;
@@ -230,6 +250,7 @@ impl GstHandle {
             &opusenc,
             &audio_encoder_queue,
             &audio_webrtc_queue,
+            discord_streamer.upcast_ref::<Element>(),
         ])?;
 
         //Link video elements
@@ -241,6 +262,7 @@ impl GstHandle {
             &video_encoder_queue,
             &encoder,
             &video_webrtc_queue,
+            discord_streamer.upcast_ref::<Element>(),
         ])?;
 
         //Link audio elements
@@ -251,6 +273,7 @@ impl GstHandle {
             &audio_encoder_queue,
             &opusenc,
             &audio_webrtc_queue,
+            discord_streamer.upcast_ref::<Element>(),
         ])?;
 
         // Debug diagram
