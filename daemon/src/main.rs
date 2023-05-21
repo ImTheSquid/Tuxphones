@@ -77,7 +77,6 @@ fn initialize_logging() {
     //  - "tuxphones" for the daemon itself
     //  - "tuxphones::websocket" for the websocket
     //  - "tuxphones::command" for the command processor
-    //  - "tuxphones::sdp" for loading SDP
     //And level is one of:
     //  - 0 = disabled
     //  - 1 = "error"
@@ -95,7 +94,7 @@ fn initialize_logging() {
         .collect();
 
     let file_categories: HashMap<String, i8> = std::env::var("TUX_FILE_LOG")
-        .unwrap_or_else(|_| "tuxphones::sdp=5".to_string())
+        .unwrap_or_else(|_| String::new())
         .split(',')
         .map(|s| {
             let mut split = s.split('=');
@@ -137,7 +136,7 @@ fn initialize_logging() {
                     let file = fs::File::create(format!("{}/{}.log", file_path.to_str().unwrap(), category)).unwrap();
                     //TODO: Figure out why the non_blocking wrapper doesn't work
                     //let (non_blocking, _guard) = tracing_appender::non_blocking(file);
-                    let sdp_log = tracing_subscriber::fmt::layer()
+                    let file_log = tracing_subscriber::fmt::layer()
                         .with_ansi(false)
                         .with_writer(file)
                         .with_target(false)
@@ -146,7 +145,7 @@ fn initialize_logging() {
                         }))
                         .boxed();
 
-                    file_subscribers.push(sdp_log);
+                    file_subscribers.push(file_log);
                 }
             }
             Err(_) => {

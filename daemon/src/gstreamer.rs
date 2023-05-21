@@ -88,14 +88,13 @@ impl Drop for GstHandle {
 }
 
 impl GstHandle {
-    /// # Arguments
-    /// * `sdp` - SDP message from discord, CRLF line endings are required (\r\n)
     pub async fn new(
         encoder_to_use: VideoEncoderType,
         xid: xid,
         resolution: StreamResolutionInformation,
         fps: i32,
     ) -> Result<Self, GstInitializationError> {
+        info!("Creating new GstHandle");
         //Create a new GStreamer pipeline
         let pipeline = gst::Pipeline::new(None);
 
