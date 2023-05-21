@@ -94,7 +94,7 @@ fn initialize_logging() {
         .collect();
 
     let file_categories: HashMap<String, i8> = std::env::var("TUX_FILE_LOG")
-        .unwrap_or_else(|_| String::new())
+        .unwrap_or_else(|_| "tuxphones=3".to_string())
         .split(',')
         .map(|s| {
             let mut split = s.split('=');
