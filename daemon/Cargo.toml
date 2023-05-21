@@ -32,3 +32,4 @@ tracing-appender = "0.2.2"
 chrono = "0.4.24"
 gst-plugin-ximageredux = "0.1.7"
 async-tungstenite = { version = "0.22.1", features = ["tokio-runtime"] }
+gst-plugin-discordstreamer = {git = "https://github.com/ImTheSquid/gst-discordsender"}
