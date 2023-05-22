@@ -244,12 +244,13 @@ impl GstHandle {
             &encoder,
             &video_encoder_queue,
             &video_webrtc_queue,
-            &pulsesrc,
+            /*&pulsesrc,
             &audioconvert,
             &audio_capsfilter,
             &opusenc,
             &audio_encoder_queue,
             &audio_webrtc_queue,
+             */
             discord_streamer.upcast_ref::<Element>(),
         ])?;
 
@@ -265,7 +266,7 @@ impl GstHandle {
             discord_streamer.upcast_ref::<Element>(),
         ])?;
 
-        //Link audio elements
+/*        //Link audio elements
         Element::link_many(&[
             &pulsesrc,
             &audio_capsfilter,
@@ -275,7 +276,7 @@ impl GstHandle {
             &audio_webrtc_queue,
             discord_streamer.upcast_ref::<Element>(),
         ])?;
-
+*/
         // Debug diagram
         let out = debug_bin_to_dot_data(&pipeline, DebugGraphDetails::ALL);
         //TODO: Move to logs folder
