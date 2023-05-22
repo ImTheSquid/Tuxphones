@@ -606,7 +606,7 @@ dependencies = [
 [[package]]
 name = "gst-plugin-discordstreamer"
 version = "0.0.1"
-source = "git+https://github.com/ImTheSquid/gst-discordsender#6d5e8092f5fbfa3d37f134b60a7ff88aafce9cc9"
+source = "git+https://github.com/ImTheSquid/gst-discordsender#abf8429b9867bfa8397949b9c373fd16f0f4740b"
 dependencies = [
  "byteorder",
  "discortp",
