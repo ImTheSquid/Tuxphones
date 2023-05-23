@@ -134,7 +134,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           return;
         const json = JSON.parse(arg);
         console.log("%cWS SEND FRAME ================================", "color: green; font-size: large; margin-top: 20px;");
-        if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === "video" && json.d.user_id === UserStore.getCurrentUser().id) {
+        if (json.op === 0 && json.d.streams.length > 0 && json.d.streams[0].type === "screen" && json.d.user_id === UserStore.getCurrentUser().id) {
           console.log("%cHOOKING SOCKET", "color: blue; font-size: xx-large;");
           if (this._ws) {
             this.resetVars();
@@ -142,10 +142,12 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           this._ws = that;
           this._onmessage = that.onmessage;
           that.onmessage = this.wsOnMessage;
-        } else if (json.op == 1) {
+        } else if (json.op == 1 && this._ws === that) {
           json.d.data.mode = "xsalsa20_poly1305_lite";
           json.d.mode = "xsalsa20_poly1305_lite";
           args[0] = JSON.stringify(json);
+        } else if (json.op == 5) {
+          this.voice_ssrc = json.d.ssrc;
         }
         Logger.log(json);
         console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
@@ -170,29 +172,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
           WebSocketControl.streamSetPaused(this.streamKey, false);
           Logger.log(this.streamKey);
-          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.base_ssrc);
-          return new Promise((res) => res());
-        } else if (this.currentSoundProfile) {
-          switch (arg.type) {
-            case "STREAM_CREATE":
-              Logger.log("SOUND SC PROFILE");
-              Logger.log(arg);
-              this.serverId = arg.rtcServerId;
-              return new Promise((res) => res());
-            case "STREAM_UPDATE":
-              Logger.log("SOUND SU PROFILE");
-              Logger.log(arg);
-              return new Promise((res) => res());
-            case "VOICE_STATE_UPDATES":
-              Logger.log("SOUND VSU PROFILE");
-              Logger.log(arg);
-              arg.voiceStates[0].selfStream = false;
-              break;
-          }
-        } else if (arg.type.match(/(STREAM.*_UPDATE|STREAM_CREATE)/)) {
-          Logger.log("STREAM CREATE OR UPDATE");
-          Logger.log(arg);
-        } else {
+          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
         }
         return original(arg);
       });
@@ -245,7 +225,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       });
     }
     wsOnMessage(m) {
-      this._onmessage(m);
       const json = JSON.parse(m.data);
       console.log("%cWS RECV FRAME ================================", "color: orange; font-size: large; margin-top: 20px;");
       if (json.op === 4) {
@@ -257,6 +236,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log("Secret key:");
         Logger.log(json.d.secret_key);
         this.secret_key = json.d.secret_key;
+        return;
       } else if (json.op == 2) {
         this.base_ssrc = json.d.ssrc;
         this.ip = json.d.ip;
@@ -264,11 +244,16 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       }
       Logger.log(json);
       console.log("%cWS END RECV FRAME ============================", "color: orange; font-size: large; margin-bottom: 20px;");
+      this._onmessage(m);
     }
     resetVars() {
       this._ws.onmessage = this._onmessage;
       this._ws = null;
       this._onmessage = null;
+      this.currentSoundProfile = null;
+      this.interceptNextStreamServerUpdate = false;
+      this.base_ssrc = null;
+      this.voice_ssrc = null;
     }
     patchGoLive(m) {
       Patcher.after(m, "default", (_, __, ret) => {
@@ -322,7 +307,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           Logger.err(`Received unknown command type: ${obj.type}`);
       }
     }
-    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, base_ssrc) {
+    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, voice_ssrc, base_ssrc) {
       let resolution = null;
       switch (selectedResolution) {
         case 720:
@@ -355,6 +340,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         framerate,
         rtc_connection_id: RTCConnectionStore.getRTCConnectionId(),
         secret_key,
+        voice_ssrc,
         base_ssrc,
         ip,
         port

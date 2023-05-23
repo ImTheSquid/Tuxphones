@@ -68,6 +68,8 @@ pub enum SocketListenerCommand {
         rtc_connection_id: String,
         /// Secret key for Sodium encryption
         secret_key: Vec<u8>,
+        /// The associated voice chat's SSRC
+        voice_ssrc: u32,
         /// The base SSRC for creating a stream, needs to be offset to get video (+1) and RTX (+2) SSRCs
         base_ssrc: u32,
         ip: String,

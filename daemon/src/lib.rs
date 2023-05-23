@@ -92,6 +92,7 @@ impl CommandProcessor {
                                 framerate,
                                 rtc_connection_id,
                                 secret_key,
+                                voice_ssrc,
                                 base_ssrc,
                                 ip,
                                 port,
