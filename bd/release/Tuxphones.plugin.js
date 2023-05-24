@@ -247,6 +247,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       this._onmessage(m);
     }
     resetVars() {
+      this.endStream();
       this._ws.onmessage = this._onmessage;
       this._ws = null;
       this._onmessage = null;

@@ -286,6 +286,7 @@ return class extends Plugin {
     }
 
     resetVars() {
+        this.endStream();
         this._ws.onmessage = this._onmessage;
         this._ws = null;
         this._onmessage = null;
