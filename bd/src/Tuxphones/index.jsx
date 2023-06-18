@@ -56,6 +56,8 @@ return class extends Plugin {
         this.wsOnMessage = this.wsOnMessage.bind(this);
         this._onmessage = null;
         this._ws = null;
+
+        this.voice_ssrc = null;
     }
 
     onOpen() {
@@ -87,7 +89,13 @@ return class extends Plugin {
                 // WARNING WARNING WARNING ==========================================================================
                 // This is a hack, it may not always work!
                 // Still need to test this in multi-person VC
-                this.voice_ssrc = json.d.ssrc;
+                if (this.voice_ssrc) {
+                    this.audio_ssrc = json.d.ssrc;
+                    json.d.speaking = 1;
+                    args[0] = JSON.stringify(json);
+                } else {
+                    this.voice_ssrc = json.d.ssrc;
+                }
             }
             // else if (json.op === 12 && json.d.video_ssrc !== 0 && json.d.rtx_ssrc !== 0) {
             //     console.log('%cRECEIVED SSRC INFORMATION', 'color: aqua; font-size: xx-large;');
@@ -271,7 +279,7 @@ return class extends Plugin {
             Logger.log('Secret key:');
             Logger.log(json.d.secret_key);
             this.secret_key = json.d.secret_key;
-            this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
+            this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc, this.audio_ssrc);
             return; // Disallow encryption information, stopping the stream from being created
         } else if (json.op == 2) {
             this.base_ssrc = json.d.ssrc;
@@ -295,6 +303,7 @@ return class extends Plugin {
         this.interceptNextStreamServerUpdate = false;
         this.base_ssrc = null;
         this.voice_ssrc = null;
+        this.audio_ssrc = null;
     }
 
     patchGoLive(m) {
@@ -361,7 +370,7 @@ return class extends Plugin {
 
     // server_id PRIORITY: RTC Server ID -> Guild ID -> Channel ID
     // Guild ID will always exist, so get RTC Server ID
-    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, voice_ssrc, base_ssrc) {
+    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, voice_ssrc, base_ssrc, audio_ssrc) {
         let resolution = null;
         switch (selectedResolution) {
             case 720: resolution = {
@@ -400,6 +409,7 @@ return class extends Plugin {
             base_ssrc: base_ssrc,
             ip: ip,
             port: port,
+            audio_ssrc: audio_ssrc,
         }));
     }
 

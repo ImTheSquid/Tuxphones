@@ -126,6 +126,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       this.wsOnMessage = this.wsOnMessage.bind(this);
       this._onmessage = null;
       this._ws = null;
+      this.voice_ssrc = null;
     }
     onOpen() {
       Patcher.before(WebSocket.prototype, "send", (that, args) => {
@@ -147,7 +148,13 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           json.d.mode = "xsalsa20_poly1305_lite";
           args[0] = JSON.stringify(json);
         } else if (json.op == 5) {
-          this.voice_ssrc = json.d.ssrc;
+          if (this.voice_ssrc) {
+            this.audio_ssrc = json.d.ssrc;
+            json.d.speaking = 1;
+            args[0] = JSON.stringify(json);
+          } else {
+            this.voice_ssrc = json.d.ssrc;
+          }
         }
         Logger.log(json);
         console.log("%cWS END SEND FRAME ============================", "color: green; font-size: large; margin-bottom: 20px;");
@@ -235,7 +242,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log("Secret key:");
         Logger.log(json.d.secret_key);
         this.secret_key = json.d.secret_key;
-        this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
+        this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc, this.audio_ssrc);
         return;
       } else if (json.op == 2) {
         this.base_ssrc = json.d.ssrc;
@@ -255,6 +262,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
       this.interceptNextStreamServerUpdate = false;
       this.base_ssrc = null;
       this.voice_ssrc = null;
+      this.audio_ssrc = null;
     }
     patchGoLive(m) {
       Patcher.after(m, "default", (_, __, ret) => {
@@ -308,7 +316,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           Logger.err(`Received unknown command type: ${obj.type}`);
       }
     }
-    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, voice_ssrc, base_ssrc) {
+    startStream(pid, xid, selectedResolution, framerate, ip, port, secret_key, voice_ssrc, base_ssrc, audio_ssrc) {
       let resolution = null;
       switch (selectedResolution) {
         case 720:
@@ -344,7 +352,8 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         voice_ssrc,
         base_ssrc,
         ip,
-        port
+        port,
+        audio_ssrc
       }));
     }
     endStream() {
