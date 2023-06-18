@@ -152,7 +152,7 @@ return class extends Plugin {
                 }
                 WebSocketControl.streamSetPaused(this.streamKey, false);
                 Logger.log(this.streamKey)
-                this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
+                // this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
 
                 // this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, res, this.selectedFPS, this.serverId, arg.token, arg.endpoint);
                 // return new Promise(res => res());
@@ -271,6 +271,7 @@ return class extends Plugin {
             Logger.log('Secret key:');
             Logger.log(json.d.secret_key);
             this.secret_key = json.d.secret_key;
+            this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
             return; // Disallow encryption information, stopping the stream from being created
         } else if (json.op == 2) {
             this.base_ssrc = json.d.ssrc;

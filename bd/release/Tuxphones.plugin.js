@@ -172,7 +172,6 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
           }
           WebSocketControl.streamSetPaused(this.streamKey, false);
           Logger.log(this.streamKey);
-          this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
         }
         return original(arg);
       });
@@ -236,6 +235,7 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log("Secret key:");
         Logger.log(json.d.secret_key);
         this.secret_key = json.d.secret_key;
+        this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc);
         return;
       } else if (json.op == 2) {
         this.base_ssrc = json.d.ssrc;
