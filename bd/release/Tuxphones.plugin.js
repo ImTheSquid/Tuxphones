@@ -242,6 +242,32 @@ module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
         Logger.log("Secret key:");
         Logger.log(json.d.secret_key);
         this.secret_key = json.d.secret_key;
+        const op12 = {
+          "op": 12,
+          "d": {
+            "audio_ssrc": this.audio_ssrc,
+            "video_ssrc": this.video_ssrc,
+            "rtx_ssrc": this.video_ssrc + 1,
+            "streams": [
+              {
+                "type": "video",
+                "rid": "100",
+                "ssrc": this.video_ssrc,
+                "active": true,
+                "quality": 100,
+                "rtx_ssrc": this.video_ssrc + 1,
+                "max_bitrate": 8e6,
+                "max_framerate": this.selectedFPS,
+                "max_resolution": {
+                  "type": "fixed",
+                  "width": this.selectedResolution.width,
+                  "height": this.selectedResolution.height
+                }
+              }
+            ]
+          }
+        };
+        this._ws.send(JSON.stringify(op12));
         this.startStream(this.currentSoundProfile.pid, this.currentSoundProfile.xid, this.selectedResolution, this.selectedFPS, this.ip, this.port, this.secret_key, this.voice_ssrc, this.base_ssrc, this.audio_ssrc);
         return;
       } else if (json.op == 2) {
